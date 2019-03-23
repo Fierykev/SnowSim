@@ -21,12 +21,12 @@ bool RayTriangleIntersection(
 	const double detX =
 		dot(edge1, tmpVar);
 
-	if (detX < -epsilon ||
-		epsilon < detX)
+	if (-epsilon < detX &&
+		detX < epsilon)
 	{
 		return false;
 	}
-
+	
 	const double inverseDeterminant =
 		1.f / detX;
 
@@ -35,19 +35,27 @@ bool RayTriangleIntersection(
 	float u =
 		dot(rayToTri, tmpVar) *
 		inverseDeterminant;
-	float v =
-		dot(direction,
-			cross(rayToTri, edge1)) *
-		inverseDeterminant;
 
 	if (u < 0.f ||
+		1.f < u)
+	{
+		return false;
+	}
+
+	float3 q =
+		cross(rayToTri, edge1);
+	float v =
+		dot(direction, q) *
+		inverseDeterminant;
+
+	if (v < 0.f ||
 		1.f < u + v)
 	{
 		return false;
 	}
 
 	t =
-		dot(edge2, tmpVar) *
+		dot(edge2, q) *
 		inverseDeterminant;
 
 	if (epsilon < t)
@@ -57,6 +65,65 @@ bool RayTriangleIntersection(
 
 	return false;
 }
+
+/*
+__device__
+float RayTriangleIntersection(
+	float3 origin,
+	float3 direction,
+	float3 a,
+	float3 b,
+	float3 c,
+	float& t)
+{
+	const float3 edge1 = b - a;
+	const float3 edge2 = c - a;
+
+	float3 tmpVar = cross(direction, edge2);
+	const float dx = dot(edge1, tmpVar);
+
+	// no determinant
+	if (-epsilon < dx &&
+		dx < epsilon)
+		return false;
+
+	// calc the inverse determinant
+	const float idx = 1.f / dx;
+
+	const float3 rayToTri = origin - a;
+
+	// compute the inverse of the 3x3 matrix
+
+	float3 inverse;
+
+	// compute inverse x
+	inverse.x = dot(rayToTri, tmpVar) * idx;
+
+	if (inverse.x < .0f || 1.f < inverse.x)
+		return false;
+
+	// update with cross product
+	tmpVar = cross(rayToTri, edge1);
+
+	// compute inverse y
+	inverse.y = dot(direction, tmpVar) * idx;
+
+	// intersection is not within the triangle bounds
+	if (inverse.y < .0f || 1.f < inverse.x + inverse.y)
+		return false;
+
+	// calculate inverse z (distance)
+	inverse.z = dot(edge2, tmpVar) * idx;
+
+	// ray intersects the triangle
+	if (epsilon < inverse.z)
+	{
+		t = inverse.z;
+		return true;
+	}
+
+	return false;
+}*/
 
 __global__
 void ModelToVoxels(
@@ -83,14 +150,19 @@ void ModelToVoxels(
 		location.y * gridInfo.width * gridInfo.height;
 
 	// Voxelization approx by shooting ray.
+	unsigned int xEndLoc =
+		lookup +
+		gridInfo.width;
+	unsigned int xLoc =
+		xEndLoc;
 	{
 		float3 origin =
 			gridInfo.position +
 			gridInfo.scale *
 			make_float3(
 				0.f,
-				location.x + .5f,
-				location.y + .5f);
+				float(location.x) + .5f,
+				float(location.y) + .5f);
 		float3 direction =
 			make_float3(1.f, .0f, .0f);
 
@@ -103,7 +175,7 @@ void ModelToVoxels(
 			const float3 v2 = verts[indices[index + 2]].position;
 
 			float t;
-
+			
 			if (RayTriangleIntersection(
 				origin,
 				direction,
@@ -112,25 +184,51 @@ void ModelToVoxels(
 				v2,
 				t))
 			{
-				int cell = t / gridInfo.scale;
-				occupied[lookup + cell] = true;
+				unsigned int cell = t / gridInfo.scale;
+				unsigned int location = lookup + cell;
+				occupied[location] = true;
+
+				xLoc = min(xLoc, location);
 			}
 		}
 	}
 
 	// Fill voxels.
 	{
-		bool inside = false;
+		unsigned int xExtentLoc;
 
-		for (unsigned int x = 0; x < gridInfo.width; x++)
+		for (; xLoc < xEndLoc; xLoc++)
 		{
-			if (occupied[lookup + x])
+			// Skip filled in areas.
+			while (
+				occupied[xLoc] &&
+				xLoc < xEndLoc)
 			{
-				inside = !inside;
+				xLoc++;
 			}
-			else if (inside)
+
+			// Scan unfilled areas.
+			xExtentLoc =
+				xLoc;
+			while (
+				!occupied[xExtentLoc] &&
+				xExtentLoc < xEndLoc)
 			{
-				occupied[lookup + x] = true;
+				xExtentLoc++;
+			}
+
+			// Stop.
+			if (xExtentLoc == xEndLoc)
+			{
+				break;
+			}
+
+			while (
+				xLoc < xExtentLoc)
+			{
+				occupied[xLoc] =
+					true;
+				xLoc++;
 			}
 		}
 	}
@@ -164,24 +262,26 @@ void SnowModel::Load(const char* filename)
 
 void SnowModel::Voxelize(
 	Grid<SnowParticle>* grid,
-	DisplayType display)
+	short display)
 {
-	if (display == MODEL)
+	if (display & MODEL)
 	{
+		glColor3f(1, 0, 0);
 		obj.Draw();
+		glColor3f(1, 1, 1);
 	}
-
+	
 	// Copy verts to the GPU.
 	Vertex* gpuVerts;
 	{
 		cudaError(
 			cudaMalloc(
-				(void**)&gpuVerts,
+				&gpuVerts,
 				obj.numberofVerts() * sizeof(Vertex)));
 		cudaError(
 			cudaMemcpy(
 				gpuVerts,
-				(const void*)obj.getVertices(),
+				obj.getVertices(),
 				obj.numberofVerts() * sizeof(Vertex),
 				cudaMemcpyHostToDevice));
 	}
@@ -191,7 +291,7 @@ void SnowModel::Voxelize(
 	{
 		cudaError(
 			cudaMalloc(
-				(void**)&gpuIndices,
+				&gpuIndices,
 				obj.getNumIndices() * sizeof(unsigned int)));
 
 		unsigned int offset = 0;
@@ -201,7 +301,7 @@ void SnowModel::Voxelize(
 			cudaError(
 				cudaMemcpy(
 					gpuIndices + offset,
-					(const void*)obj.getIndices(matIndex),
+					obj.getIndices(matIndex),
 					obj.getNumIndices(matIndex) * sizeof(unsigned int),
 					cudaMemcpyHostToDevice));
 
@@ -239,7 +339,7 @@ void SnowModel::Voxelize(
 			(grid->GetHeight() + threads.x - 1) / threads.x,
 			(grid->GetDepth() + threads.y - 1) / threads.y,
 			1);
-
+		
 		ModelToVoxels<<<blocks, threads>>>(
 			gpuVerts,
 			gpuIndices,
@@ -247,7 +347,7 @@ void SnowModel::Voxelize(
 			*grid->GetGridInfo(),
 			occupied);
 
-		if (display == VOXELS)
+		if (display & VOXELS)
 		{
 			RenderVoxels(
 				grid,

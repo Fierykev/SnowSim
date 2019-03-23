@@ -93,7 +93,7 @@ public:
 		return gridInfo.depth;
 	}
 
-	unsigned int GetScale()
+	float GetScale()
 	{
 		return gridInfo.scale;
 	}

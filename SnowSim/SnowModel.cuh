@@ -12,10 +12,10 @@ class SnowModel
 public:
 	enum DisplayType
 	{
-		NONE,
-		MODEL,
-		VOXELS,
-		PARTICLES
+		NONE = 0x0,
+		MODEL = 0x1,
+		VOXELS = 0x1 << 1,
+		PARTICLES = 0x1 << 2
 	};
 
 	SnowModel();
@@ -25,7 +25,7 @@ public:
 
 	void Voxelize(
 		Grid<SnowParticle>* grid,
-		DisplayType display = NONE);
+		short display = NONE);
 
 	void RenderVoxels(
 		Grid<SnowParticle>* grid,
@@ -34,7 +34,7 @@ public:
 private:
 	ObjLoader obj;
 
-	static const unsigned int numThreads = 1024;
+	static const unsigned int numThreads = 64;
 	static_assert(
 		numThreads % 2 == 0,
 		"Number of threads must be a multiple of 2.");

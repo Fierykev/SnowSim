@@ -43,14 +43,12 @@ void Render()
 	glTranslatef(0.f, 0.f, -10.f);
 	glRotatef(angle, 0.f, 1.f, 0.f);
 
-	glColor3f(1, 0, 0);
-
 	//StepSimulation();
 	snowModel.Voxelize(
 		&grid,
-		SnowModel::DisplayType::VOXELS);
+		SnowModel::DisplayType::NONE);
 
-	angle += .3f;
+	angle += 1.f;
 
 	glFlush();
 	glutSwapBuffers();
@@ -115,8 +113,9 @@ int main(int argc, char* argv[])
 				// setup for OpenGL
 				ilEnable(IL_ORIGIN_SET);
 				ilOriginFunc(IL_ORIGIN_LOWER_LEFT);
-
-				glPolygonMode(GL_FRONT, GL_FILL);
+				
+				// TMP
+				glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 				glEnable(GL_DEPTH_TEST);
 				glDepthFunc(GL_LESS);
 
