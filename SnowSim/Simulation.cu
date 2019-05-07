@@ -1,7 +1,6 @@
 #include <cuda_runtime_api.h>
 #include <iostream>
 
-#include "Obstacle.h"
 #include "Simulation.cuh"
 #include "Cube.h"
 
@@ -308,12 +307,16 @@ void InitVolume(
 void Simulation::SetupSim(
 	Grid<GridCell>* grid,
 	SnowParticle* particleList,
-	uint numParticles)
+	uint numParticles,
+	Obstacle* obstacles,
+	uint numObstacles)
 {
 	{
 		this->grid = grid;
 		this->particles = particleList;
 		this->numParticles = numParticles;
+		this->obstacles = obstacles;
+		this->numObstacles = numObstacles;
 	}
 
 	GridInfo gridInfo =
@@ -525,6 +528,59 @@ void ComputeSim(
 	}
 }
 
+__device__
+void ProcessObstacles(
+	const Obstacle* obstacles,
+	const uint numObstacles,
+	const float3& pos,
+	float3& velocity)
+{
+	for (uint i = 0; i < numObstacles; i++)
+	{
+		const Obstacle& obstacle =
+			obstacles[i];
+
+		if (computeHit(obstacle, pos))
+		{
+			float3 vDelta =
+				velocity - obstacle.vel;
+
+			float3 normal =
+				computeNormal(obstacle, pos);
+
+			float angle =
+				dot(vDelta, normal);
+
+			// Objects moving into each other.
+			if (angle < 0.f)
+			{
+				float3 ref =
+					vDelta - normal * angle;
+				float magnitude =
+					length(ref);
+
+				if (magnitude <= -obstacle.friction * angle)
+				{
+					vDelta = make_float3(
+						0.f,
+						0.f,
+						0.f);
+				}
+				else
+				{
+					vDelta =
+						(1.f + obstacle.friction * angle / magnitude) *
+						ref;
+				}
+			}
+
+			velocity =
+				vDelta +
+				obstacle.vel;
+		}
+	}
+}
+
 __global__
 void ComputeCellVel(
 	bool updateDeltaV,
@@ -533,7 +589,9 @@ void ComputeCellVel(
 	GridCell* gridCell,
 	GridInfo gridInfo,
 	float deltaT,
-	uint numParticles)
+	uint numParticles,
+	Obstacle* obstacles,
+	uint numObstacles)
 {
 	int id = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -569,7 +627,26 @@ void ComputeCellVel(
 
 		// Collisions.
 		{
-			// TODO:
+			uint3 relPos =
+				GridInfo::GetRelativePos(
+					id,
+					make_uint3(
+						gridInfo.width + 1,
+						gridInfo.height + 1,
+						gridInfo.depth + 1));
+
+			float3 pos =
+				make_float3(
+					relPos.x,
+					relPos.y,
+					relPos.z) * gridInfo.scale +
+					gridInfo.position;
+
+			ProcessObstacles(
+				obstacles,
+				numObstacles,
+				pos,
+				voxel.velocity);
 		}
 
 		if (updateDeltaV)
@@ -725,7 +802,9 @@ void UpdateParticles(
 	GridCell* gridCell,
 	GridInfo gridInfo,
 	float deltaT,
-	uint numParticles)
+	uint numParticles,
+	Obstacle* obstacles,
+	const uint numObstacles)
 {
 	int id = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -751,7 +830,11 @@ void UpdateParticles(
 		velGrad,
 		deltaT);
 	
-	// TODO: collisions
+	ProcessObstacles(
+		obstacles,
+		numObstacles,
+		particle.position,
+		particle.velocity);
 
 	particle.position +=
 		deltaT * particle.velocity;
@@ -781,7 +864,6 @@ void Simulation::StepSim(
 				numParticles * sizeof(SnowParticleExternalData)));
 	}
 
-	/*
 	{
 		const dim3 threads(
 			NUM_THREADS,
@@ -792,11 +874,11 @@ void Simulation::StepSim(
 			1,
 			1);
 
-		UpdateObstacles<<<blocks, threads>>>>(
+		UpdateObstacles<<<blocks, threads>>>(
 			obstacles,
 			numObstacles,
 			deltaT);
-	}*/
+	}
 
 	{
 		const dim3 threads(
@@ -814,6 +896,7 @@ void Simulation::StepSim(
 			numParticles);
 	}
 	/*
+	std::cout << "2____________" << std::endl;
 	{
 		SnowParticleExternalData* externalDataCPU =
 			new SnowParticleExternalData[numParticles];
@@ -829,8 +912,8 @@ void Simulation::StepSim(
 			std::cout << i << std::endl;
 			externalDataCPU[i].sigma.print();
 		}
-	}
-	*/
+	}*/
+	
 	{
 		const dim3 threads(
 			NUM_THREADS / 64,
@@ -848,7 +931,9 @@ void Simulation::StepSim(
 			*grid->GetGridInfo(),
 			numParticles);
 	}
+
 	/*
+	std::cout << "3____________" << std::endl;
 	{
 		uint numNodes =
 			(grid->GetWidth() + 1) *
@@ -875,8 +960,8 @@ void Simulation::StepSim(
 				std::cout << std::endl;
 			}
 		}
-	}
-	*/
+	}*/
+	
 	{
 		const dim3 threads(
 			NUM_THREADS,
@@ -897,9 +982,13 @@ void Simulation::StepSim(
 			grid->Data(),
 			*grid->GetGridInfo(),
 			deltaT,
-			numParticles);
+			numParticles,
+			obstacles,
+			numObstacles);
 	}
+
 	/*
+	std::cout << "4____________" << std::endl;
 	{
 		uint numNodes =
 			(grid->GetWidth() + 1) *
@@ -932,8 +1021,8 @@ void Simulation::StepSim(
 		}
 
 		std::cout << m << std::endl;
-	}
-	*/
+	}*/
+	
 	// TODO: implicit.
 	{
 
@@ -955,9 +1044,13 @@ void Simulation::StepSim(
 			grid->Data(),
 			*grid->GetGridInfo(),
 			deltaT,
-			numParticles);
+			numParticles,
+			obstacles,
+			numObstacles);
 	}
+
 	/*
+	std::cout << "5____________" << std::endl;
 	{
 		SnowParticle* particlesCPU =
 			new SnowParticle[numParticles];
@@ -987,7 +1080,7 @@ void Simulation::Draw()
 		cudaError(cudaMemcpy(
 			particlesCPU,
 			particles,
-			numParticles * sizeof(GridCell),
+			numParticles * sizeof(SnowParticle),
 			cudaMemcpyDeviceToHost));
 
 		glColor3f(0.f, 1.f, 0.f);
@@ -997,9 +1090,9 @@ void Simulation::Draw()
 			glPushMatrix();
 			{
 				glTranslatef(
-					particlesCPU->position.x,
-					particlesCPU->position.y,
-					particlesCPU->position.z);
+					particlesCPU[i].position.x,
+					particlesCPU[i].position.y,
+					particlesCPU[i].position.z);
 
 				Cube::Render(.1f);
 			}

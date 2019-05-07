@@ -1,6 +1,7 @@
 #pragma once
 
 #include "SnowParticle.cuh"
+#include "Obstacle.h"
 #include "GridCell.cuh"
 #include "Grid.h"
 
@@ -10,7 +11,9 @@ public:
 	void SetupSim(
 		Grid<GridCell>* grid,
 		SnowParticle* particleList,
-		uint numParticles);
+		uint numParticles,
+		Obstacle* obstacles,
+		uint numObstacles);
 
 	void StepSim(float deltaT);
 
@@ -20,4 +23,6 @@ private:
 	Grid<GridCell>* grid;
 	SnowParticle* particles;
 	uint numParticles;
+	Obstacle* obstacles;
+	uint numObstacles;
 };

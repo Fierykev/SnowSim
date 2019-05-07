@@ -25,6 +25,8 @@
 
 #define NUM_PARTICLES 1000
 
+#define NUM_OBSTACLES 1
+
 int windowHandle = 0;
 int windowSizeX = 512, windowSizeY = 512;
 
@@ -32,6 +34,7 @@ SnowModel snowModel;
 Grid<GridCell> grid;
 SnowParticle* particles;
 Simulation simulation;
+Obstacle* obstacles;
 
 static float angle = 0.f;
 
@@ -52,6 +55,8 @@ void Render()
 
 	glFlush();
 	glutSwapBuffers();
+
+	//Sleep(100);
 
 	glutPostRedisplay();
 }
@@ -161,16 +166,50 @@ int main(int argc, char* argv[])
 		snowModel.SampleParticles(
 			&grid,
 			particles,
+			1.f,
 			NUM_PARTICLES,
 			SnowModel::DisplayType::NONE);
 	}
 
 	// Setup simulation.
 	{
+		// Create floor.
+		{
+			Obstacle* obstaclesCpu =
+				new Obstacle[NUM_OBSTACLES];
+			{
+				obstaclesCpu[0].pos =
+					make_float3(0.f, -2.f, 0.f);
+				obstaclesCpu[0].vel =
+					make_float3(0.f, 0.f, 0.f);
+				obstaclesCpu[0].misc =
+					make_float3(0.f, 1.f, 0.f);
+				obstaclesCpu[0].friction = .01f;
+				obstaclesCpu[0].type = 0;
+			}
+
+			{
+				cudaError(
+					cudaMalloc(
+						&obstacles,
+						NUM_OBSTACLES * sizeof(Obstacle)));
+
+				cudaError(cudaMemcpy(
+					obstacles,
+					obstaclesCpu,
+					NUM_OBSTACLES * sizeof(Obstacle),
+					cudaMemcpyHostToDevice));
+			}
+
+			delete[] obstaclesCpu;
+		}
+
 		simulation.SetupSim(
 			&grid,
 			particles,
-			10);// NUM_PARTICLES);
+			NUM_PARTICLES,
+			obstacles,
+			NUM_OBSTACLES);
 	}
 
 	// Run.
@@ -182,6 +221,9 @@ int main(int argc, char* argv[])
 	{
 		cudaError(
 			cudaFree(particles));
+
+		cudaError(
+			cudaFree(obstacles));
 	}
 
 	return 0;

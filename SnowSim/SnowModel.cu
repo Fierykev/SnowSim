@@ -182,6 +182,7 @@ __global__
 void SnowSamples(
 	GridInfo gridInfo,
 	SnowParticle* particle,
+	float mass,
 	const unsigned int numSamples,
 	const bool* occupied,
 	curandState* state,
@@ -227,7 +228,7 @@ void SnowSamples(
 		tmpParticle.position =
 			position;
 		tmpParticle.mass =
-			1.f;
+			mass;
 		tmpParticle.velocity =
 			make_float3(0.f, -1.f, 0.f);
 	}
@@ -256,6 +257,7 @@ void SnowModel::Load(const char* filename)
 void SnowModel::SampleParticles(
 	Grid<GridCell>* grid,
 	SnowParticle* particle,
+	float density,
 	uint numParticles,
 	short display)
 {
@@ -351,6 +353,48 @@ void SnowModel::SampleParticles(
 
 	}
 
+	// Get mass.
+	float mass;
+	{
+		// TODO: move to GPU.
+		bool* occupiedCPU;
+		{
+			unsigned int size =
+				grid->GetWidth() * grid->GetHeight() * grid->GetDepth();
+			occupiedCPU = new bool[size];
+
+			cudaError(
+				cudaMemcpy(
+					occupiedCPU,
+					occupied,
+					size * sizeof(bool),
+					cudaMemcpyDeviceToHost));
+		}
+
+		uint count = 0;
+		{
+			for (int i = 0;
+				i < grid->GetWidth() *
+				grid->GetHeight() *
+				grid->GetDepth();
+				i++)
+			{
+				if (occupiedCPU[i])
+				{
+					count++;
+				}
+			}
+		}
+
+		float volume = count *
+			grid->GetScale() *
+			grid->GetScale() *
+			grid->GetScale();
+		mass = density * volume / (float)numParticles;
+
+		delete[] occupiedCPU;
+	}
+
 	// Create particles.
 	{
 		const dim3 threads(
@@ -373,6 +417,7 @@ void SnowModel::SampleParticles(
 		SnowSamples<<<blocks, threads>>>(
 			*grid->GetGridInfo(),
 			particle,
+			mass,
 			numParticles,
 			occupied,
 			state,

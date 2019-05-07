@@ -27,6 +27,7 @@ public:
 	void SampleParticles(
 		Grid<GridCell>* grid,
 		SnowParticle* particle,
+		float density,
 		uint numParticles,
 		short display);
 
