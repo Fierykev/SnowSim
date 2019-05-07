@@ -12,24 +12,26 @@
 // DevIL
 #include <IL/il.h>
 
-#include "SnowParticle.h"
+#include "SnowParticle.cuh"
 #include "SnowModel.cuh"
 #include "Simulation.cuh"
 #include "Grid.h"
-
-// TMP
+#include "GridCell.cuh"
 #include "Cube.h"
 
 #define CENTER make_float3(0.f, 0.f, 0.f)
 #define GRID_SIZE 100
 #define SCALE .1f
 
+#define NUM_PARTICLES 1000
+
 int windowHandle = 0;
 int windowSizeX = 512, windowSizeY = 512;
 
-// TMP.
 SnowModel snowModel;
-Grid<SnowParticle> grid;
+Grid<GridCell> grid;
+SnowParticle* particles;
+Simulation simulation;
 
 static float angle = 0.f;
 
@@ -43,10 +45,8 @@ void Render()
 	glTranslatef(0.f, 0.f, -10.f);
 	glRotatef(angle, 0.f, 1.f, 0.f);
 
+	simulation.StepSim(.1f);
 	//StepSimulation();
-	snowModel.Voxelize(
-		&grid,
-		SnowModel::DisplayType::NONE);
 
 	angle += 1.f;
 
@@ -149,14 +149,39 @@ int main(int argc, char* argv[])
 
 	// Setup scene.
 	{
-		//SnowModel snowModel("Models/Monkey.obj");
 		snowModel.Load("Models/Monkey.obj");
-		//snowModel.Voxelize(&grid);
+
+		{
+			cudaError(
+				cudaMalloc(
+					&particles,
+					NUM_PARTICLES * sizeof(SnowParticle)));
+		}
+
+		snowModel.SampleParticles(
+			&grid,
+			particles,
+			NUM_PARTICLES,
+			SnowModel::DisplayType::NONE);
+	}
+
+	// Setup simulation.
+	{
+		simulation.SetupSim(
+			&grid,
+			particles,
+			10);// NUM_PARTICLES);
 	}
 
 	// Run.
 	{
 		glutMainLoop();
+	}
+
+	// Cleanup.
+	{
+		cudaError(
+			cudaFree(particles));
 	}
 
 	return 0;

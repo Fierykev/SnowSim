@@ -1,3 +1,21 @@
 #pragma once
 
-void StepSimulation();
+#include "SnowParticle.cuh"
+#include "GridCell.cuh"
+#include "Grid.h"
+
+class Simulation
+{
+public:
+	void SetupSim(
+		Grid<GridCell>* grid,
+		SnowParticle* particleList,
+		uint numParticles);
+
+	void StepSim(float deltaT);
+
+private:
+	Grid<GridCell>* grid;
+	SnowParticle* particles;
+	uint numParticles;
+};

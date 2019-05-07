@@ -3,7 +3,8 @@
 #include <string>
 #include <cassert>
 
-#include "SnowParticle.h"
+#include "SnowParticle.cuh"
+#include "GridCell.cuh"
 #include "Grid.h"
 #include "ObjectFileLoader.h"
 
@@ -23,18 +24,24 @@ public:
 
 	void Load(const char* filename);
 
-	void Voxelize(
-		Grid<SnowParticle>* grid,
-		short display = NONE);
+	void SampleParticles(
+		Grid<GridCell>* grid,
+		SnowParticle* particle,
+		uint numParticles,
+		short display);
 
 	void RenderVoxels(
-		Grid<SnowParticle>* grid,
+		Grid<GridCell>* grid,
 		bool* occupied);
+
+	void RenderParticles(
+		SnowParticle* particle,
+		uint numParticles);
 
 private:
 	ObjLoader obj;
 
-	static const unsigned int numThreads = 64;
+	static const unsigned int numThreads = 32;
 	static_assert(
 		numThreads % 2 == 0,
 		"Number of threads must be a multiple of 2.");

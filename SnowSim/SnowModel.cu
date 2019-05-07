@@ -1,3 +1,6 @@
+#include <curand.h>
+#include <curand_kernel.h>
+
 #include "SnowModel.cuh"
 #include "Cube.h"
 
@@ -65,65 +68,6 @@ bool RayTriangleIntersection(
 
 	return false;
 }
-
-/*
-__device__
-float RayTriangleIntersection(
-	float3 origin,
-	float3 direction,
-	float3 a,
-	float3 b,
-	float3 c,
-	float& t)
-{
-	const float3 edge1 = b - a;
-	const float3 edge2 = c - a;
-
-	float3 tmpVar = cross(direction, edge2);
-	const float dx = dot(edge1, tmpVar);
-
-	// no determinant
-	if (-epsilon < dx &&
-		dx < epsilon)
-		return false;
-
-	// calc the inverse determinant
-	const float idx = 1.f / dx;
-
-	const float3 rayToTri = origin - a;
-
-	// compute the inverse of the 3x3 matrix
-
-	float3 inverse;
-
-	// compute inverse x
-	inverse.x = dot(rayToTri, tmpVar) * idx;
-
-	if (inverse.x < .0f || 1.f < inverse.x)
-		return false;
-
-	// update with cross product
-	tmpVar = cross(rayToTri, edge1);
-
-	// compute inverse y
-	inverse.y = dot(direction, tmpVar) * idx;
-
-	// intersection is not within the triangle bounds
-	if (inverse.y < .0f || 1.f < inverse.x + inverse.y)
-		return false;
-
-	// calculate inverse z (distance)
-	inverse.z = dot(edge2, tmpVar) * idx;
-
-	// ray intersects the triangle
-	if (epsilon < inverse.z)
-	{
-		t = inverse.z;
-		return true;
-	}
-
-	return false;
-}*/
 
 __global__
 void ModelToVoxels(
@@ -237,10 +181,59 @@ void ModelToVoxels(
 __global__
 void SnowSamples(
 	GridInfo gridInfo,
+	SnowParticle* particle,
 	const unsigned int numSamples,
-	bool* occupied)
+	const bool* occupied,
+	curandState* state,
+	const uint seed)
 {
+	int sampleNumber =
+		threadIdx.x + blockIdx.x * blockDim.x;
 
+	if (numSamples <= sampleNumber)
+	{
+		return;
+	}
+
+	curandState& cState = state[sampleNumber];
+	curand_init(seed, sampleNumber, 0, &cState);
+
+	uint voxelID;
+
+	uint dim =
+		gridInfo.width *
+		gridInfo.height *
+		gridInfo.depth;
+
+	do
+	{
+		voxelID = curand(&cState) % dim;
+	} while (!occupied[voxelID]);
+
+	// Sample inside the voxel.
+	float3 position =
+		gridInfo.GetGrid(voxelID);
+
+	{
+		position +=
+			make_float3(
+				curand_uniform(&cState),
+				curand_uniform(&cState),
+				curand_uniform(&cState)) * gridInfo.scale;
+	}
+
+	SnowParticle tmpParticle;
+	{
+		tmpParticle.position =
+			position;
+		tmpParticle.mass =
+			1.f;
+		tmpParticle.velocity =
+			make_float3(0.f, -1.f, 0.f);
+	}
+
+	particle[sampleNumber] =
+		tmpParticle;
 }
 
 SnowModel::SnowModel()
@@ -260,8 +253,10 @@ void SnowModel::Load(const char* filename)
 	obj.Load(filename);
 }
 
-void SnowModel::Voxelize(
-	Grid<SnowParticle>* grid,
+void SnowModel::SampleParticles(
+	Grid<GridCell>* grid,
+	SnowParticle* particle,
+	uint numParticles,
 	short display)
 {
 	if (display & MODEL)
@@ -332,8 +327,8 @@ void SnowModel::Voxelize(
 	// Find occupied voxels.
 	{
 		const dim3 threads(
-			numThreads >> 1,
-			numThreads >> 1,
+			numThreads,
+			numThreads,
 			1);
 		const dim3 blocks(
 			(grid->GetHeight() + threads.x - 1) / threads.x,
@@ -353,6 +348,47 @@ void SnowModel::Voxelize(
 				grid,
 				occupied);
 		}
+
+	}
+
+	// Create particles.
+	{
+		const dim3 threads(
+			numThreads,
+			1,
+			1);
+		const dim3 blocks(
+			(numParticles + threads.x - 1) / threads.x,
+			1,
+			1);
+
+		curandState* state;
+		{
+			cudaError(
+				cudaMalloc(
+					&state,
+					numParticles * sizeof(curandState)));
+		}
+
+		SnowSamples<<<blocks, threads>>>(
+			*grid->GetGridInfo(),
+			particle,
+			numParticles,
+			occupied,
+			state,
+			0);// time(NULL));
+
+		{
+			cudaError(
+				cudaFree(state));
+		}
+
+		if (display & PARTICLES)
+		{
+			RenderParticles(
+				particle,
+				numParticles);
+		}
 	}
 
 	// Free data.
@@ -367,7 +403,7 @@ void SnowModel::Voxelize(
 }
 
 void SnowModel::RenderVoxels(
-	Grid<SnowParticle>* grid,
+	Grid<GridCell>* grid,
 	bool* occupied)
 {
 	bool* occupiedCPU;
@@ -426,4 +462,48 @@ void SnowModel::RenderVoxels(
 	}
 
 	delete[] occupiedCPU;
+}
+
+void SnowModel::RenderParticles(
+	SnowParticle* particle,
+	uint numParticles)
+{
+	SnowParticle* particleCPU;
+	{
+		unsigned int size =
+			numParticles;
+		particleCPU = new SnowParticle[size];
+
+		cudaError(
+			cudaMemcpy(
+				particleCPU,
+				particle,
+				size * sizeof(SnowParticle),
+				cudaMemcpyDeviceToHost));
+	}
+
+	{
+		glColor3f(0.f, 0.f, 1.f);
+
+		for (uint i = 0; i < numParticles; i++)
+		{
+			glPushMatrix();
+			{
+				auto& pos =
+					particleCPU[i].position;
+
+				glTranslatef(
+					pos.x,
+					pos.y,
+					pos.z);
+
+				Cube::Render(.1f);
+			}
+			glPopMatrix();
+		}
+
+		glColor3f(1.f, 1.f, 1.f);
+	}
+
+	delete[] particleCPU;
 }
