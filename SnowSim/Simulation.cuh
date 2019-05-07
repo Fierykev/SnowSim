@@ -14,6 +14,8 @@ public:
 
 	void StepSim(float deltaT);
 
+	void Draw();
+
 private:
 	Grid<GridCell>* grid;
 	SnowParticle* particles;

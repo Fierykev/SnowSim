@@ -16,7 +16,7 @@ struct float3x3
 	}
 
 	__host__ __device__  __forceinline__
-	float3x3& operator = (const float3x3 &val)
+	float3x3& operator =(const float3x3 &val)
 	{
 #pragma unroll
 		for (uint i = 0; i < 9; i++)
@@ -88,64 +88,136 @@ struct float3x3
 		return tmp;
 	}
 
-	__host__ __device__
+	__device__
+	void svdDecomp(
+		float3x3& u,
+		float3x3& s,
+		float3x3& v)
+	{
+		svd(
+			d[0], d[1], d[2],
+			d[3], d[4], d[5],
+			d[6], d[7], d[8],
+
+			u.d[0], u.d[1], u.d[2],
+			u.d[3], u.d[4], u.d[5],
+			u.d[6], u.d[7], u.d[8],
+
+			s.d[0], s.d[1], s.d[2],
+			s.d[3], s.d[4], s.d[5],
+			s.d[6], s.d[7], s.d[8],
+
+			v.d[0], v.d[1], v.d[2],
+			v.d[3], v.d[4], v.d[5],
+			v.d[6], v.d[7], v.d[8]);
+	}
+
+	__device__
 	float3x3 polarDecomp()
 	{
-		float3x3 out;
-		float u[9], s[9], v[9];
+		float3x3 u, s, v;
 
 		svd(
 			d[0], d[1], d[2],
 			d[3], d[4], d[5],
 			d[6], d[7], d[8],
 
-			u[0], u[1], u[2],
-			u[3], u[4], u[5],
-			u[6], u[7], u[8],
+			u.d[0], u.d[1], u.d[2],
+			u.d[3], u.d[4], u.d[5],
+			u.d[6], u.d[7], u.d[8],
 
-			s[0], s[1], s[2],
-			s[3], s[4], s[5],
-			s[6], s[7], s[8],
+			s.d[0], s.d[1], s.d[2],
+			s.d[3], s.d[4], s.d[5],
+			s.d[6], s.d[7], s.d[8],
 
-			v[0], v[1], v[2],
-			v[3], v[4], v[5],
-			v[6], v[7], v[8]);
-
-		multAtB(
-			u[0], u[1], u[2],
-			u[3], u[4], u[5],
-			u[6], u[7], u[8],
-
-			v[0], v[1], v[2],
-			v[3], v[4], v[5],
-			v[6], v[7], v[8],
-			
-			out.d[0], out.d[1], out.d[2],
-			out.d[3], out.d[4], out.d[5],
-			out.d[6], out.d[7], out.d[8]);
-
-		return out;
+			v.d[0], v.d[1], v.d[2],
+			v.d[3], v.d[4], v.d[5],
+			v.d[6], v.d[7], v.d[8]);
+		
+		return u.multABt(v);
 	}
 
 	__host__ __device__
 	float3x3 multABt(float3x3 val)
 	{
 		float3x3 out;
-
-		multAtB(
-			d[0], d[1], d[2],
-			d[3], d[4], d[5],
-			d[6], d[7], d[8],
-
-			val.d[0], val.d[1], val.d[2],
-			val.d[3], val.d[4], val.d[5],
-			val.d[6], val.d[7], val.d[8],
-
-			out.d[0], out.d[1], out.d[2],
-			out.d[3], out.d[4], out.d[5],
-			out.d[6], out.d[7], out.d[8]);
+		out.d[0] = d[0] * val.d[0] + d[3] * val.d[3] + d[6] * val.d[6];
+		out.d[1] = d[1] * val.d[0] + d[4] * val.d[3] + d[7] * val.d[6];
+		out.d[2] = d[2] * val.d[0] + d[5] * val.d[3] + d[8] * val.d[6];
+		out.d[3] = d[0] * val.d[1] + d[3] * val.d[4] + d[6] * val.d[7];
+		out.d[4] = d[1] * val.d[1] + d[4] * val.d[4] + d[7] * val.d[7];
+		out.d[5] = d[2] * val.d[1] + d[5] * val.d[4] + d[8] * val.d[7];
+		out.d[6] = d[0] * val.d[2] + d[3] * val.d[5] + d[6] * val.d[8];
+		out.d[7] = d[1] * val.d[2] + d[4] * val.d[5] + d[7] * val.d[8];
+		out.d[8] = d[2] * val.d[2] + d[5] * val.d[5] + d[8] * val.d[8];
 
 		return out;
+	}
+
+	__host__ __device__
+	float3x3 multABCt(float3x3 valB, float3x3 valC)
+	{
+		float3x3 out;
+		out.d[0] = d[0] * valB.d[0] * valC.d[0] + d[3] * valB.d[3] * valC.d[4] + d[6] * valB.d[6] * valC.d[8];
+		out.d[1] = d[1] * valB.d[0] * valC.d[0] + d[4] * valB.d[3] * valC.d[4] + d[7] * valB.d[6] * valC.d[8];
+		out.d[2] = d[2] * valB.d[0] * valC.d[0] + d[5] * valB.d[3] * valC.d[4] + d[8] * valB.d[6] * valC.d[8];
+		out.d[3] = d[0] * valB.d[1] * valC.d[0] + d[3] * valB.d[4] * valC.d[4] + d[6] * valB.d[7] * valC.d[8];
+		out.d[4] = d[1] * valB.d[1] * valC.d[0] + d[4] * valB.d[4] * valC.d[4] + d[7] * valB.d[7] * valC.d[8];
+		out.d[5] = d[2] * valB.d[1] * valC.d[0] + d[5] * valB.d[4] * valC.d[4] + d[8] * valB.d[7] * valC.d[8];
+		out.d[6] = d[0] * valB.d[2] * valC.d[0] + d[3] * valB.d[5] * valC.d[4] + d[6] * valB.d[8] * valC.d[8];
+		out.d[7] = d[1] * valB.d[2] * valC.d[0] + d[4] * valB.d[5] * valC.d[4] + d[7] * valB.d[8] * valC.d[8];
+		out.d[8] = d[2] * valB.d[2] * valC.d[0] + d[5] * valB.d[5] * valC.d[4] + d[8] * valB.d[8] * valC.d[8];
+
+		return out;
+	}
+
+	__host__ __device__ __forceinline__
+	static float3x3 outerProduct(
+		const float3& a,
+		const float3& b)
+	{
+		float3x3 out;
+		{
+			out.d[0] = a.x * b.x;
+			out.d[1] = a.y * b.x;
+			out.d[2] = a.z * b.x;
+			out.d[3] = a.x * b.y;
+			out.d[4] = a.y * b.y;
+			out.d[5] = a.z * b.y;
+			out.d[6] = a.x * b.z;
+			out.d[7] = a.y * b.z;
+			out.d[8] = a.z * b.z;
+		}
+
+		return out;
+	}
+
+	__host__ __device__ __forceinline__
+	float3x3 operator *(const float3x3 &val) const
+	{
+		float3x3 out;
+		out.d[0] = d[0] * val.d[0] + d[3] * val.d[1] + d[6] * val.d[2];
+		out.d[1] = d[1] * val.d[0] + d[4] * val.d[1] + d[7] * val.d[2];
+		out.d[2] = d[2] * val.d[0] + d[5] * val.d[1] + d[8] * val.d[2];
+		out.d[3] = d[0] * val.d[3] + d[3] * val.d[4] + d[6] * val.d[5];
+		out.d[4] = d[1] * val.d[3] + d[4] * val.d[4] + d[7] * val.d[5];
+		out.d[5] = d[2] * val.d[3] + d[5] * val.d[4] + d[8] * val.d[5];
+		out.d[6] = d[0] * val.d[6] + d[3] * val.d[7] + d[6] * val.d[8];
+		out.d[7] = d[1] * val.d[6] + d[4] * val.d[7] + d[7] * val.d[8];
+		out.d[8] = d[2] * val.d[6] + d[5] * val.d[7] + d[8] * val.d[8];
+
+		return out;
+	}
+
+	__host__ __device__ __forceinline__
+	void print()
+	{
+		printf("\n%10f %10f %10f\n"\
+			"%10f %10f %10f\n"\
+			"%10f %10f %10f\n",
+			d[0], d[3], d[6],
+			d[1], d[4], d[7],
+			d[2], d[5], d[8]);
 	}
 };
 

@@ -185,7 +185,7 @@ public:
 		cudaError(
 			cudaMalloc(
 				(void**)&grid,
-				gridInfo.width * gridInfo.height * gridInfo.depth * sizeof(T)));
+				(gridInfo.width + 1) * (gridInfo.height + 1) * (gridInfo.depth + 1) * sizeof(T)));
 	}
 
 	float3 GetPosition()

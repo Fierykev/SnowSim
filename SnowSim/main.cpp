@@ -46,7 +46,7 @@ void Render()
 	glRotatef(angle, 0.f, 1.f, 0.f);
 
 	simulation.StepSim(.1f);
-	//StepSimulation();
+	simulation.Draw();
 
 	angle += 1.f;
 
