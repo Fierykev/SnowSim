@@ -215,8 +215,8 @@ void ObjLoader::Load_Geometry(const char *filename)
 
 	mesh_num = 0;
 
-	minBB = { FLT_MAX, FLT_MAX, FLT_MAX };
-	maxBB = { FLT_MIN, FLT_MIN, FLT_MIN };
+	minBB = make_float3(FLT_MAX, FLT_MAX, FLT_MAX);
+	maxBB = make_float3(FLT_MIN, FLT_MIN, FLT_MIN);
 
 	// create maps to store the lighting values for the material
 

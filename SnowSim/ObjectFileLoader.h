@@ -27,6 +27,8 @@
 #include "Helper.h"
 #include "Image.h"
 
+#include "Helper.h"
+
 using namespace std;
 
 namespace std

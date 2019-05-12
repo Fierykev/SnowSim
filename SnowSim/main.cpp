@@ -43,8 +43,9 @@ int frame = 0, time, timebase = 0;
 void Render()
 {
 	frame++;
-	time = glutGet(GLUT_ELAPSED_TIME);
 	/*
+	time = glutGet(GLUT_ELAPSED_TIME);
+	
 	if ((time - timebase) % 1000 == 0) {
 		printf("FPS:%4.2f, Frame:%i\n",
 			frame*1000.0 / (time - timebase),
@@ -72,11 +73,11 @@ void Render()
 	glFlush();
 	glutSwapBuffers();
 	glutPostRedisplay();
-
+/*
 	if ((frame - 1) % 5 == 0) {
 		//printf("Frame: %i\n", frame);
 		//system("PAUSE");
-	}
+	}*/
 }
 
 void Keyboard(unsigned char key, int x, int y)
