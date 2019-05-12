@@ -24,7 +24,7 @@
 #define GRID_SIZE 100
 #define SCALE .1f
 
-#define NUM_PARTICLES 100
+#define NUM_PARTICLES 10000
 
 #define NUM_OBSTACLES (6 + 1)
 

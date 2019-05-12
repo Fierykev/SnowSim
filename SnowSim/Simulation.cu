@@ -1,10 +1,6 @@
 #include <cuda_runtime_api.h>
 #include <iostream>
 
-// TMP
-#include "svd_test.h"
-#include "float3x3.h"
-
 #include "Serializable.h"
 #include "Simulation.cuh"
 #include "Cube.h"

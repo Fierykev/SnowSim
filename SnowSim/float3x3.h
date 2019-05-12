@@ -3,10 +3,6 @@
 #include "Helper.h"
 
 #include "svd.h"
-//#include "cuda/matrix.h"
-//#include "svd_test.h"
-
-//void computeSVD(const mat3 &A, mat3 &W, mat3 &S, mat3 &V);
 
 struct float3x3
 {
