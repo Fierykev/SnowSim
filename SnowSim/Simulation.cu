@@ -1,6 +1,11 @@
 #include <cuda_runtime_api.h>
 #include <iostream>
 
+// TMP
+#include "svd_test.h"
+#include "float3x3.h"
+
+#include "Serializable.h"
 #include "Simulation.cuh"
 #include "Cube.h"
 #include "Sphere.h"
@@ -426,7 +431,7 @@ void SolveSystem(
 	
 	float3x3 pD =
 		elasticity.polarDecomp();
-
+	
 	const Mat& material =
 		particle.material;
 
@@ -727,12 +732,17 @@ float3x3 ComputeVelGrad(
 									gridInfo.width + 1,
 									gridInfo.height + 1,
 									gridInfo.depth + 1))];
-
+					
 					velGrad =
 						velGrad +
 						float3x3::outerProduct(
 							voxel.velocity,
 							wGrad);
+					/*
+					velGrad.d[0] += voxel.velocity.x;
+					velGrad.d[1] += voxel.velocity.y;
+					velGrad.d[2] += voxel.velocity.z;*/
+
 
 					pic += voxel.velocity * weight;
 					flip += voxel.deltaV * weight;
@@ -743,6 +753,8 @@ float3x3 ComputeVelGrad(
 	
 	particle.velocity =
 		lerp(pic, particle.velocity + flip, ALPHA);
+
+	return velGrad;
 }
 
 __device__
@@ -761,7 +773,7 @@ void ComputeDeformGrad(
 	float3x3 u, s, v;
 	particle.elasticity.svdDecomp(
 		u, s, v);
-
+	
 	float3x3 sClamp;
 	{
 		sClamp.d[0] = clamp(s.d[0],
@@ -781,9 +793,11 @@ void ComputeDeformGrad(
 		sClampInv.d[4] = 1.f / sClamp.d[4];
 		sClampInv.d[8] = 1.f / sClamp.d[8];
 	}
-
+	
 	particle.plasticity =
-		v.multABCt(sClampInv, u);
+		v.multABCt(sClampInv, u) *
+		particle.elasticity *
+		particle.plasticity;
 	particle.elasticity =
 		u.multABCt(sClamp, v);
 }
@@ -834,8 +848,11 @@ void UpdateParticles(
 }
 
 void Simulation::StepSim(
-	float deltaT)
+	float deltaT,
+	uint frame)
 {
+	//std::cout << "FRAME " << frame << std::endl;
+
 	// Clear data.
 	{
 		cudaError(
@@ -887,6 +904,57 @@ void Simulation::StepSim(
 			particles,
 			externalData,
 			numParticles);
+
+#ifdef CHECK
+		{
+			unsigned int size =
+				numParticles;
+			auto externalDataCPU =
+				new SnowParticleExternalData[size];
+
+			cudaError(
+				cudaMemcpy(
+					externalDataCPU,
+					externalData,
+					size * sizeof(SnowParticleExternalData),
+					cudaMemcpyDeviceToHost));
+
+			float3* vals =
+				new float3[size * 3];
+
+			for (uint i = 0; i < size; i++)
+			{
+				float3 v;
+
+				for (uint k = 0; k < 9; k+=3)
+				{
+					v.x =
+						externalDataCPU[i].sigma.d[k];
+					v.y =
+						externalDataCPU[i].sigma.d[k + 1];
+					v.z =
+						externalDataCPU[i].sigma.d[k + 2];
+
+					vals[i * 3 + k / 3] = v;
+				}
+			}
+
+#ifndef _DEBUG
+			Serializable::Store(
+				vals,
+				size * 3,
+				"externalData.txt",
+				frame);
+#else
+			Serializable::Compare(
+				vals,
+				"externalData.txt",
+				frame);
+#endif
+			delete[] externalDataCPU;
+			delete[] vals;
+		}
+#endif
 	}
 	/*
 	std::cout << "2____________" << std::endl;
@@ -905,8 +973,9 @@ void Simulation::StepSim(
 			std::cout << i << std::endl;
 			externalDataCPU[i].sigma.print();
 		}
-	}*/
-	
+		system("PAUSE");
+	}
+	*/
 	{
 		const dim3 threads(
 			NUM_THREADS / 64,
@@ -923,6 +992,55 @@ void Simulation::StepSim(
 			grid->Data(),
 			*grid->GetGridInfo(),
 			numParticles);
+
+#ifdef CHECK
+		{
+			unsigned int size =
+				(grid->GetWidth() + 1) *
+				(grid->GetHeight() + 1) *
+				(grid->GetDepth() + 1);
+			auto cellCPU =
+				new GridCell[size];
+
+			cudaError(
+				cudaMemcpy(
+					cellCPU,
+					grid->Data(),
+					size * sizeof(GridCell),
+					cudaMemcpyDeviceToHost));
+
+			float3* vals =
+				new float3[size * 3];
+
+			for (uint i = 0; i < size; i++)
+			{
+				vals[i * 3] =
+					make_float3(
+						cellCPU[i].mass,
+						0,
+						0);
+				vals[i * 3 + 1] =
+					cellCPU[i].velocity;
+				vals[i * 3 + 2] =
+					cellCPU[i].force;
+			}
+
+#ifndef _DEBUG
+			Serializable::Store(
+				vals,
+				size * 3,
+				"cellData.txt",
+				frame);
+#else
+			Serializable::Compare(
+				vals,
+				"cellData.txt",
+				frame);
+#endif
+			delete[] cellCPU;
+			delete[] vals;
+		}
+#endif
 	}
 
 	/*
@@ -978,6 +1096,52 @@ void Simulation::StepSim(
 			numParticles,
 			obstacles,
 			numObstacles);
+
+#ifdef CHECK
+		{
+			unsigned int size =
+				(grid->GetWidth() + 1) *
+				(grid->GetHeight() + 1) *
+				(grid->GetDepth() + 1);
+			auto cellCPU =
+				new GridCell[size];
+
+			cudaError(
+				cudaMemcpy(
+					cellCPU,
+					grid->Data(),
+					size * sizeof(GridCell),
+					cudaMemcpyDeviceToHost));
+
+			float3* vals =
+				new float3[size * 3];
+
+			for (uint i = 0; i < size; i++)
+			{
+				vals[i * 3] =
+					cellCPU[i].velocity;
+				vals[i * 3 + 1] =
+					cellCPU[i].force;
+				vals[i * 3 + 2] =
+					cellCPU[i].deltaV;
+			}
+
+#ifndef _DEBUG
+			Serializable::Store(
+				vals,
+				size * 3,
+				"cellData2.txt",
+				frame);
+#else
+			Serializable::Compare(
+				vals,
+				"cellData2.txt",
+				frame);
+#endif
+			delete[] cellCPU;
+			delete[] vals;
+		}
+#endif
 	}
 
 	/*
@@ -1040,8 +1204,73 @@ void Simulation::StepSim(
 			numParticles,
 			obstacles,
 			numObstacles);
-	}
 
+
+#ifdef CHECK
+		{
+			unsigned int size =
+				numParticles;
+			auto particleCPU =
+				new SnowParticle[size];
+
+			cudaError(
+				cudaMemcpy(
+					particleCPU,
+					particles,
+					size * sizeof(SnowParticle),
+					cudaMemcpyDeviceToHost));
+
+			float3* vals =
+				new float3[size * 8];
+
+			for (uint i = 0; i < size; i++)
+			{
+				auto& p =
+					particleCPU[i];
+
+				vals[i * 8] = p.position;
+				vals[i * 8 + 1] = p.velocity;
+
+				float3 v, ev;
+
+				for (uint k = 0; k < 9; k += 3)
+				{
+					v.x =
+						p.elasticity.d[k];
+					v.y =
+						p.elasticity.d[k + 1];
+					v.z =
+						p.elasticity.d[k + 2];
+
+					ev.x =
+						p.plasticity.d[k];
+					ev.y =
+						p.plasticity.d[k + 1];
+					ev.z =
+						p.plasticity.d[k + 2];
+
+					vals[i * 8 + 2 + k / 3] = v;
+					vals[i * 8 + 2 + 3 + k / 3] = ev;
+				}
+			}
+
+#ifndef _DEBUG
+			Serializable::Store(
+				vals,
+				size * 8,
+				"particleData2.txt",
+				frame);
+#else
+			Serializable::Compare(
+				vals,
+				"particleData2.txt",
+				frame);
+#endif
+			delete[] particleCPU;
+			delete[] vals;
+				}
+#endif
+	}
 	/*
 	std::cout << "5____________" << std::endl;
 	{
@@ -1056,11 +1285,13 @@ void Simulation::StepSim(
 
 		for (uint i = 0; i < numParticles; i++)
 		{
-			std::cout << i << " " <<
-				particlesCPU[i].position.x << " " <<
-				particlesCPU[i].position.y << " " <<
-				particlesCPU[i].position.z << " " << std::endl;
+			std::cout << i << " " << std::endl;
+			particlesCPU[i].plasticity.print();
+
+			std::cout << std::endl;
 		}
+
+		system("PAUSE");
 	}*/
 }
 

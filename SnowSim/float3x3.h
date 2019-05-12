@@ -3,6 +3,10 @@
 #include "Helper.h"
 
 #include "svd.h"
+//#include "cuda/matrix.h"
+//#include "svd_test.h"
+
+//void computeSVD(const mat3 &A, mat3 &W, mat3 &S, mat3 &V);
 
 struct float3x3
 {
@@ -89,27 +93,43 @@ struct float3x3
 	}
 
 	__device__
-	void svdDecomp(
-		float3x3& u,
-		float3x3& s,
-		float3x3& v)
+		void svdDecomp(
+			float3x3& u,
+			float3x3& s,
+			float3x3& v)
 	{
-		svd(
-			d[0], d[1], d[2],
+		/*
+		mat3 u_, s_, v_;
+
+		mat3 a = mat3(d[0], d[1], d[2],
 			d[3], d[4], d[5],
-			d[6], d[7], d[8],
+			d[6], d[7], d[8]);
+		computeSVD(
+			a, u_, s_, v_);
 
-			u.d[0], u.d[1], u.d[2],
-			u.d[3], u.d[4], u.d[5],
-			u.d[6], u.d[7], u.d[8],
+		for (int i = 0; i < 9; i++)
+		{
+			u.d[i] = u_.data[i];
+			v.d[i] = v_.data[i];
+			s.d[i] = s_.data[i];
+		}*/
+		
+		svd(
+			d[0], d[3], d[6],
+			d[1], d[4], d[7],
+			d[2], d[5], d[8],
 
-			s.d[0], s.d[1], s.d[2],
-			s.d[3], s.d[4], s.d[5],
-			s.d[6], s.d[7], s.d[8],
+			u.d[0], u.d[3], u.d[6],
+			u.d[1], u.d[4], u.d[7],
+			u.d[2], u.d[5], u.d[8],
 
-			v.d[0], v.d[1], v.d[2],
-			v.d[3], v.d[4], v.d[5],
-			v.d[6], v.d[7], v.d[8]);
+			s.d[0], s.d[3], s.d[6],
+			s.d[1], s.d[4], s.d[7],
+			s.d[2], s.d[5], s.d[8],
+
+			v.d[0], v.d[3], v.d[6],
+			v.d[1], v.d[4], v.d[7],
+			v.d[2], v.d[5], v.d[8]);
 	}
 
 	__device__
@@ -117,23 +137,7 @@ struct float3x3
 	{
 		float3x3 u, s, v;
 
-		svd(
-			d[0], d[1], d[2],
-			d[3], d[4], d[5],
-			d[6], d[7], d[8],
-
-			u.d[0], u.d[1], u.d[2],
-			u.d[3], u.d[4], u.d[5],
-			u.d[6], u.d[7], u.d[8],
-
-			s.d[0], s.d[1], s.d[2],
-			s.d[3], s.d[4], s.d[5],
-			s.d[6], s.d[7], s.d[8],
-
-			v.d[0], v.d[1], v.d[2],
-			v.d[3], v.d[4], v.d[5],
-			v.d[6], v.d[7], v.d[8]);
-		
+		svdDecomp(u, s, v);
 		return u.multABt(v);
 	}
 
@@ -155,18 +159,18 @@ struct float3x3
 	}
 
 	__host__ __device__
-	float3x3 multABCt(float3x3 valB, float3x3 valC)
+	float3x3 multABCt(const float3x3& valB, const float3x3& valC)
 	{
 		float3x3 out;
-		out.d[0] = d[0] * valB.d[0] * valC.d[0] + d[3] * valB.d[3] * valC.d[4] + d[6] * valB.d[6] * valC.d[8];
-		out.d[1] = d[1] * valB.d[0] * valC.d[0] + d[4] * valB.d[3] * valC.d[4] + d[7] * valB.d[6] * valC.d[8];
-		out.d[2] = d[2] * valB.d[0] * valC.d[0] + d[5] * valB.d[3] * valC.d[4] + d[8] * valB.d[6] * valC.d[8];
-		out.d[3] = d[0] * valB.d[1] * valC.d[0] + d[3] * valB.d[4] * valC.d[4] + d[6] * valB.d[7] * valC.d[8];
-		out.d[4] = d[1] * valB.d[1] * valC.d[0] + d[4] * valB.d[4] * valC.d[4] + d[7] * valB.d[7] * valC.d[8];
-		out.d[5] = d[2] * valB.d[1] * valC.d[0] + d[5] * valB.d[4] * valC.d[4] + d[8] * valB.d[7] * valC.d[8];
-		out.d[6] = d[0] * valB.d[2] * valC.d[0] + d[3] * valB.d[5] * valC.d[4] + d[6] * valB.d[8] * valC.d[8];
-		out.d[7] = d[1] * valB.d[2] * valC.d[0] + d[4] * valB.d[5] * valC.d[4] + d[7] * valB.d[8] * valC.d[8];
-		out.d[8] = d[2] * valB.d[2] * valC.d[0] + d[5] * valB.d[5] * valC.d[4] + d[8] * valB.d[8] * valC.d[8];
+		out.d[0] = d[0] * valC.d[0] * valB.d[0] + d[3] * valC.d[3] * valB.d[4] + d[6] * valC.d[6] * valB.d[8];
+		out.d[1] = d[1] * valC.d[0] * valB.d[0] + d[4] * valC.d[3] * valB.d[4] + d[7] * valC.d[6] * valB.d[8];
+		out.d[2] = d[2] * valC.d[0] * valB.d[0] + d[5] * valC.d[3] * valB.d[4] + d[8] * valC.d[6] * valB.d[8];
+		out.d[3] = d[0] * valC.d[1] * valB.d[0] + d[3] * valC.d[4] * valB.d[4] + d[6] * valC.d[7] * valB.d[8];
+		out.d[4] = d[1] * valC.d[1] * valB.d[0] + d[4] * valC.d[4] * valB.d[4] + d[7] * valC.d[7] * valB.d[8];
+		out.d[5] = d[2] * valC.d[1] * valB.d[0] + d[5] * valC.d[4] * valB.d[4] + d[8] * valC.d[7] * valB.d[8];
+		out.d[6] = d[0] * valC.d[2] * valB.d[0] + d[3] * valC.d[5] * valB.d[4] + d[6] * valC.d[8] * valB.d[8];
+		out.d[7] = d[1] * valC.d[2] * valB.d[0] + d[4] * valC.d[5] * valB.d[4] + d[7] * valC.d[8] * valB.d[8];
+		out.d[8] = d[2] * valC.d[2] * valB.d[0] + d[5] * valC.d[5] * valB.d[4] + d[8] * valC.d[8] * valB.d[8];
 
 		return out;
 	}
@@ -188,6 +192,23 @@ struct float3x3
 			out.d[7] = a.y * b.z;
 			out.d[8] = a.z * b.z;
 		}
+
+		return out;
+	}
+
+	__host__ __device__
+	float3x3 transpose()
+	{
+		float3x3 out;
+		out.d[0] = d[0];
+		out.d[1] = d[3];
+		out.d[2] = d[6];
+		out.d[3] = d[1];
+		out.d[4] = d[4];
+		out.d[5] = d[7];
+		out.d[6] = d[2];
+		out.d[7] = d[5];
+		out.d[8] = d[8];
 
 		return out;
 	}

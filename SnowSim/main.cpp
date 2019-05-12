@@ -12,20 +12,21 @@
 // DevIL
 #include <IL/il.h>
 
+#include "Simulation.cuh"
 #include "SnowParticle.cuh"
 #include "SnowModel.cuh"
-#include "Simulation.cuh"
 #include "Grid.h"
 #include "GridCell.cuh"
 #include "Cube.h"
+#include "Serializable.h"
 
 #define CENTER make_float3(0.f, 0.f, 0.f)
 #define GRID_SIZE 100
 #define SCALE .1f
 
-#define NUM_PARTICLES 10000
+#define NUM_PARTICLES 100
 
-#define NUM_OBSTACLES (6)
+#define NUM_OBSTACLES (6 + 1)
 
 int windowHandle = 0;
 int windowSizeX = 512, windowSizeY = 512;
@@ -61,7 +62,9 @@ void Render()
 	//glRotatef(angle, 0.f, 1.f, 0.f);
 	glRotatef(-10.f, 0.f, 1.f, 0.f);//-60
 
-	simulation.StepSim(.1f);
+	simulation.StepSim(
+		.001f,
+		frame);
 	simulation.Draw();
 
 	angle += 1.f;
@@ -71,8 +74,8 @@ void Render()
 	glutPostRedisplay();
 
 	if ((frame - 1) % 5 == 0) {
-		printf("Frame: %i\n", frame);
-		system("PAUSE");
+		//printf("Frame: %i\n", frame);
+		//system("PAUSE");
 	}
 }
 
@@ -207,9 +210,47 @@ int main(int argc, char* argv[])
 		snowModel.SampleParticles(
 			&grid,
 			particles,
-			1.f,
+			100.f,
 			NUM_PARTICLES,
 			SnowModel::DisplayType::NONE);
+
+#ifdef CHECK
+		{
+			unsigned int size =
+				NUM_PARTICLES;
+			auto particleCPU =
+				new SnowParticle[size];
+
+			cudaError(
+				cudaMemcpy(
+					particleCPU,
+					particles,
+					size * sizeof(SnowParticle),
+					cudaMemcpyDeviceToHost));
+
+			float3* vals =
+				new float3[size];
+
+			for (uint i = 0; i < size; i++)
+			{
+				vals[i] = particleCPU[i].position;
+			}
+			
+#ifndef _DEBUG
+			Serializable::Store(
+				vals,
+				NUM_PARTICLES,
+				"sampleTest.txt");
+#else
+			Serializable::Compare(
+				vals,
+				"sampleTest.txt");
+#endif
+
+			delete[] particleCPU;
+			delete[] vals;
+		}
+#endif
 	}
 
 	// Setup simulation.
@@ -221,6 +262,7 @@ int main(int argc, char* argv[])
 
 			// Grid bounds.
 			uint boundNum = 0;
+			
 			/*
 			{
 				obstaclesCpu[boundNum].pos =
@@ -228,13 +270,13 @@ int main(int argc, char* argv[])
 				obstaclesCpu[boundNum].vel =
 					make_float3(0.f, 0.f, 0.f);
 				obstaclesCpu[boundNum].misc =
-					normalize(make_float3(0.f, 1.f, 0.1f));
+					normalize(make_float3(0.f, 1.f, 0.f));
 				obstaclesCpu[boundNum].friction = .1f;
 				obstaclesCpu[boundNum].type = 0;
 
 				boundNum++;
 			}*/
-			/*
+			
 			{
 				obstaclesCpu[boundNum].pos =
 					make_float3(0.f, -2.f, 0.f);//-2.f, 3.f);
@@ -245,7 +287,7 @@ int main(int argc, char* argv[])
 				obstaclesCpu[boundNum].type = 1;
 
 				boundNum++;
-			}*/
+			}
 
 			{
 				float3 bounds = make_float3(
@@ -309,6 +351,11 @@ int main(int argc, char* argv[])
 			obstacles,
 			NUM_OBSTACLES);
 	}
+	/*
+	simulation.StepSim(
+		.1f,
+		0);
+	exit(0);*/
 
 	// Run.
 	{

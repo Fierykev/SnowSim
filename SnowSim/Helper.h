@@ -7,6 +7,8 @@
 
 #include "float3x3.h"
 
+//#define CHECK
+
 #define cudaError(ans) { cudaAssert((ans), __FILE__, __LINE__); }
 
 #define curandError(ans) if((ans) != CURAND_STATUS_SUCCESS) cudaAssert((cudaErrorAssert), __FILE__, __LINE__);

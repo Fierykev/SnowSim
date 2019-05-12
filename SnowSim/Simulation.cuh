@@ -15,7 +15,9 @@ public:
 		Obstacle* obstacles,
 		uint numObstacles);
 
-	void StepSim(float deltaT);
+	void StepSim(
+		float deltaT,
+		uint frame);
 
 	void Draw();
 

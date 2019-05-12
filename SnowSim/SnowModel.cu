@@ -230,7 +230,7 @@ void SnowSamples(
 		tmpParticle.mass =
 			mass;
 		tmpParticle.velocity =
-			make_float3(0.f, 0.f, 10.f);
+			make_float3(0.f, -1.f, 0.f);
 	}
 
 	particle[sampleNumber] =
