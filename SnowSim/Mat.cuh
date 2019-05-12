@@ -11,31 +11,19 @@ struct Mat
 	float compressionRatio;
 	float stretchRatio;
 
-	// YOUNGS MODULUS
-	#define E0 1.4e5 // default modulus
-	#define MIN_E0 4.8e4
-	#define MAX_E0 1.4e5
-
-	// CRITICAL COMPRESSION
-	#define MIN_THETA_C 1.9e-2
-	#define MAX_THETA_C 2.5e-2
-
-	// CRITICAL STRETCH
-	#define MIN_THETA_S 5e-3
-	#define MAX_THETA_S 7.5e-3
-
-	#define POISSONS_RATIO 0.2
-
-	__host__ __device__ Mat()
+	void __host__ __device__ setup(
+		float HARDENING_COEFF,
+		float POISSON_RATIO,
+		float CRIT_COMP,
+		float CRIT_STRETCH)
 	{
-		// TODO: fix
-		YoungsPoissons(E0, POISSONS_RATIO);
-		xi = 10;
-		CriticalStrains(MAX_THETA_C, MAX_THETA_S);
+		xi = HARDENING_COEFF;
+		poisson(1.4e5, POISSON_RATIO);
+		critStrain(CRIT_COMP, CRIT_STRETCH);
 	}
 
 	__host__ __device__
-	void YoungsPoissons(float E, float v)
+	void poisson(float E, float v)
 	{
 		lambda =
 			(E * v) /
@@ -46,7 +34,7 @@ struct Mat
 	}
 
 	__host__ __device__
-	void CriticalStrains(
+	void critStrain(
 		float thetaC,
 		float thetaS)
 	{

@@ -5,6 +5,26 @@
 
 struct SnowParticle
 {
+	__host__
+	SnowParticle()
+	{
+
+	}
+
+	__device__
+	SnowParticle(
+		float HARDENING_COEFF,
+		float POISSON_RATIO,
+		float CRIT_COMP,
+		float CRIT_STRETCH)
+	{
+		material.setup(
+			HARDENING_COEFF,
+			POISSON_RATIO,
+			CRIT_COMP,
+			CRIT_STRETCH);
+	}
+
 	float3 position;
 	float mass;
 	float3 velocity =

@@ -8,6 +8,7 @@
 #include "helper_math.h"
 
 #include "float3x3.h"
+#include "Global.h"
 
 //#define CHECK
 

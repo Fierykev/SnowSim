@@ -7,11 +7,11 @@
 #include "Sphere.h"
 #include "Plane.h"
 
+#include "Global.h"
+
 #define NUM_THREADS 128
 
 #define GRAVITY make_float3(0.f, -9.8f, 0.f)
-
-#define ALPHA .05f
 
 __device__
 void atomicAdd(float3* address, float3 val)
@@ -32,16 +32,6 @@ float3 sign(float3 a)
 		sign(a.z));
 }
 
-__host__ __device__
-float bSplineFalloff(float d)
-{
-	float _d =
-		((0 <= d && d < 1) * (.5*d*d*d - d * d + 2.f / 3.f) +
-		(1 <= d && d < 2) * (-1.f / 6.f*d*d*d + d * d - 2 * d + 4.f / 3.f));
-
-	return fabs(_d);
-}
-/*
 __device__
 float bSplineFalloff(float w)
 {
@@ -58,7 +48,7 @@ float bSplineFalloff(float w)
 			4.f / 3.f);
 
 	return a + b;
-}*/
+}
 
 __device__
 float bSplineGradFalloff(float w)
@@ -656,7 +646,8 @@ __device__
 float3x3 ComputeVelGrad(
 	SnowParticle& particle,
 	GridCell* gridCell,
-	GridInfo gridInfo)
+	GridInfo gridInfo,
+	float alpha)
 {
 	float3 cellF =
 		gridInfo.GetCellPosF(particle.position);
@@ -748,7 +739,7 @@ float3x3 ComputeVelGrad(
 	}
 	
 	particle.velocity =
-		lerp(pic, particle.velocity + flip, ALPHA);
+		lerp(pic, particle.velocity + flip, alpha);
 
 	return velGrad;
 }
@@ -807,7 +798,8 @@ void UpdateParticles(
 	float deltaT,
 	uint numParticles,
 	Obstacle* obstacles,
-	const uint numObstacles)
+	const uint numObstacles,
+	const float alpha)
 {
 	int id = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -826,7 +818,8 @@ void UpdateParticles(
 		ComputeVelGrad(
 			particle,
 			gridCell,
-			gridInfo);
+			gridInfo,
+			alpha);
 
 	ComputeDeformGrad(
 		particle,
@@ -1199,7 +1192,8 @@ void Simulation::StepSim(
 			deltaT,
 			numParticles,
 			obstacles,
-			numObstacles);
+			numObstacles,
+			Global::ALPHA);
 
 
 #ifdef CHECK

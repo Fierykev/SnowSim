@@ -186,7 +186,12 @@ void SnowSamples(
 	const unsigned int numSamples,
 	const bool* occupied,
 	curandState* state,
-	const uint seed)
+	const uint seed,
+	float HARDENING_COEFF,
+	float POISSON_RATIO,
+	float CRIT_COMP,
+	float CRIT_STRETCH,
+	float SCENE)
 {
 	int sampleNumber =
 		threadIdx.x + blockIdx.x * blockDim.x;
@@ -223,14 +228,27 @@ void SnowSamples(
 				curand_uniform(&cState)) * gridInfo.scale;
 	}
 
-	SnowParticle tmpParticle;
+	SnowParticle tmpParticle(
+		HARDENING_COEFF,
+		POISSON_RATIO,
+		CRIT_COMP,
+		CRIT_STRETCH);
 	{
 		tmpParticle.position =
 			position;
 		tmpParticle.mass =
 			mass;
-		tmpParticle.velocity =
-			make_float3(0.f, -1.f, 0.f);
+
+		if (SCENE == 0)
+		{
+			tmpParticle.velocity =
+				make_float3(0.f, -1.f, 0.f);
+		}
+		else
+		{
+			tmpParticle.velocity =
+				make_float3(10.f, 10.f, 10.f);
+		}
 	}
 
 	particle[sampleNumber] =
@@ -421,7 +439,12 @@ void SnowModel::SampleParticles(
 			numParticles,
 			occupied,
 			state,
-			0);// time(NULL));
+			0,
+			Global::HARDENING_COEFF,
+			Global::POISSON_RATIO,
+			Global::CRIT_COMP,
+			Global::CRIT_STRETCH,
+			Global::SCENE);// time(NULL));
 
 		{
 			cudaError(

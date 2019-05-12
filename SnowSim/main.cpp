@@ -19,14 +19,13 @@
 #include "GridCell.cuh"
 #include "Cube.h"
 #include "Serializable.h"
+#include "Global.h"
 
 #define CENTER make_float3(0.f, 0.f, 0.f)
 #define GRID_SIZE 100
 #define SCALE .1f
 
-#define NUM_PARTICLES 10000
-
-#define NUM_OBSTACLES (6 + 1)
+int NUM_OBSTACLES = (6 + 1);
 
 int windowHandle = 0;
 int windowSizeX = 512, windowSizeY = 512;
@@ -38,7 +37,7 @@ Simulation simulation;
 Obstacle* obstacles;
 
 static float angle = 0.f;
-int frame = 0, time, timebase = 0;
+int frame = 0;// , time, timebase = 0;
 
 void Render()
 {
@@ -61,10 +60,18 @@ void Render()
 
 	glTranslatef(0.f, 0.f, -20.f);
 	//glRotatef(angle, 0.f, 1.f, 0.f);
-	glRotatef(-10.f, 0.f, 1.f, 0.f);//-60
+
+	if (Global::SCENE == 0)
+	{
+		glRotatef(40.f, 0.f, 1.f, 0.f);//-60
+	}
+	else
+	{
+		glRotatef(-60.f, 0.f, 1.f, 0.f);
+	}
 
 	simulation.StepSim(
-		.001f,
+		Global::TIME_STEP,
 		frame);
 	simulation.Draw();
 
@@ -73,11 +80,11 @@ void Render()
 	glFlush();
 	glutSwapBuffers();
 	glutPostRedisplay();
-/*
-	if ((frame - 1) % 5 == 0) {
-		//printf("Frame: %i\n", frame);
-		//system("PAUSE");
-	}*/
+
+	if ((frame - 1) % 10 == 0) {
+		printf("Frame: %i\n", frame);
+		system("PAUSE");
+	}
 }
 
 void Keyboard(unsigned char key, int x, int y)
@@ -97,6 +104,130 @@ void Idle()
 
 int main(int argc, char* argv[])
 {
+	{
+		for (int i = 0; i < argc; i++)
+		{
+			char* s = argv[i];
+			if (s[0] == '-')
+			{
+				if (argc <= i + 1)
+					continue;
+
+				std::string str;
+				std::istringstream stream;
+				uint num;
+				float numF;
+
+				switch (s[1])
+				{
+				case 'n':
+					str = argv[i + 1];
+					stream.str(str);
+					stream >> num;
+					
+					if (!stream.bad())
+					{
+						Global::NUM_PARTICLES =
+							num;
+					}
+
+					break;
+				case 's':
+					str = argv[i + 1];
+					stream.str(str);
+					stream >> num;
+
+					if (!stream.bad())
+					{
+						Global::SCENE =
+							num;
+					}
+
+					break;
+				case 't':
+					str = argv[i + 1];
+					stream.str(str);
+					stream >> numF;
+
+					if (!stream.bad())
+					{
+						Global::TIME_STEP =
+							numF;
+					}
+
+					break;
+				case 'w':
+					str = argv[i + 1];
+					stream.str(str);
+					stream >> numF;
+
+					if (!stream.bad())
+					{
+						Global::ALPHA =
+							numF;
+					}
+
+					break;
+				case 'h':
+					str = argv[i + 1];
+					stream.str(str);
+					stream >> numF;
+
+					if (!stream.bad())
+					{
+						Global::HARDENING_COEFF =
+							numF;
+					}
+
+					break;
+				case 'r':
+					str = argv[i + 1];
+					stream.str(str);
+					stream >> numF;
+
+					if (!stream.bad())
+					{
+						Global::POISSON_RATIO =
+							numF;
+					}
+
+					break;
+				case 'C':
+					str = argv[i + 1];
+					stream.str(str);
+					stream >> numF;
+
+					if (!stream.bad())
+					{
+						Global::CRIT_COMP =
+							numF;
+					}
+
+					break;
+				case 'S':
+					str = argv[i + 1];
+					stream.str(str);
+					stream >> numF;
+
+					if (!stream.bad())
+					{
+						Global::CRIT_STRETCH =
+							numF;
+					}
+
+					break;
+				}
+			}
+		}
+	}
+
+	{
+		if (1 < Global::SCENE)
+		{
+			Global::SCENE = 0;
+		}
+	}
+
 	// Setup.
 	{
 		{
@@ -199,20 +330,27 @@ int main(int argc, char* argv[])
 
 	// Setup scene.
 	{
-		snowModel.Load("Models/Monkey.obj");
+		if (Global::SCENE == 0)
+		{
+			snowModel.Load("Models/Monkey.obj");
+		}
+		else
+		{
+			snowModel.Load("Models/Sphere.obj");
+		}
 
 		{
 			cudaError(
 				cudaMalloc(
 					&particles,
-					NUM_PARTICLES * sizeof(SnowParticle)));
+					Global::NUM_PARTICLES * sizeof(SnowParticle)));
 		}
 
 		snowModel.SampleParticles(
 			&grid,
 			particles,
-			100.f,
-			NUM_PARTICLES,
+			Global::TARGET_DENSITY,
+			Global::NUM_PARTICLES,
 			SnowModel::DisplayType::NONE);
 
 #ifdef CHECK
@@ -258,31 +396,47 @@ int main(int argc, char* argv[])
 	{
 		// Create floor.
 		{
+			if (Global::SCENE == 1)
+			{
+				NUM_OBSTACLES++;
+			}
+
 			Obstacle* obstaclesCpu =
 				new Obstacle[NUM_OBSTACLES];
 
 			// Grid bounds.
 			uint boundNum = 0;
-			
-			/*
+
+			if (Global::SCENE == 1)
 			{
 				obstaclesCpu[boundNum].pos =
 					make_float3(0.f, -2.f, 0.f);
 				obstaclesCpu[boundNum].vel =
 					make_float3(0.f, 0.f, 0.f);
 				obstaclesCpu[boundNum].misc =
-					normalize(make_float3(0.f, 1.f, 0.f));
-				obstaclesCpu[boundNum].friction = .1f;
+					normalize(make_float3(0.2f, 1.f, -.3f));
+				obstaclesCpu[boundNum].friction = .001f;
 				obstaclesCpu[boundNum].type = 0;
 
 				boundNum++;
-			}*/
+
+				obstaclesCpu[boundNum].pos =
+					make_float3(-20.f, -5.f, 1.5f);
+				obstaclesCpu[boundNum].vel =
+					make_float3(10.f, 1.f, 0.f);
+				obstaclesCpu[boundNum].misc.x = 2.f;
+				obstaclesCpu[boundNum].friction = .1f;
+				obstaclesCpu[boundNum].type = 1;
+
+				boundNum++;
+			}
 			
+			if (Global::SCENE == 0)
 			{
 				obstaclesCpu[boundNum].pos =
-					make_float3(0.f, -2.f, 0.f);//-2.f, 3.f);
+					make_float3(0.f, -2.f, -5.f);
 				obstaclesCpu[boundNum].vel =
-					make_float3(0.f, 0.f, -1.f);
+					make_float3(0.f, 0.f, 10.f);
 				obstaclesCpu[boundNum].misc.x = 1.f;
 				obstaclesCpu[boundNum].friction = .1f;
 				obstaclesCpu[boundNum].type = 1;
@@ -348,7 +502,7 @@ int main(int argc, char* argv[])
 		simulation.SetupSim(
 			&grid,
 			particles,
-			NUM_PARTICLES,
+			Global::NUM_PARTICLES,
 			obstacles,
 			NUM_OBSTACLES);
 	}
