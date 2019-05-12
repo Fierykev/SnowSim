@@ -1,5 +1,7 @@
 #include "Cube.h"
 
+bool Cube::init = false;
+
 const float Cube::cubeBuffer[] = {
 	   -1.0f,-1.0f,-1.0f,
 	   -1.0f,-1.0f, 1.0f,
@@ -38,3 +40,5 @@ const float Cube::cubeBuffer[] = {
 	   -1.0f, 1.0f, 1.0f,
 	   1.0f,-1.0f, 1.0f
 };
+
+float Cube::cubeNormalBuffer[];

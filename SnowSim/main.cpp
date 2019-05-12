@@ -23,9 +23,9 @@
 #define GRID_SIZE 100
 #define SCALE .1f
 
-#define NUM_PARTICLES 1000
+#define NUM_PARTICLES 10000
 
-#define NUM_OBSTACLES 1
+#define NUM_OBSTACLES (6)
 
 int windowHandle = 0;
 int windowSizeX = 512, windowSizeY = 512;
@@ -37,16 +37,29 @@ Simulation simulation;
 Obstacle* obstacles;
 
 static float angle = 0.f;
+int frame = 0, time, timebase = 0;
 
 void Render()
 {
+	frame++;
+	time = glutGet(GLUT_ELAPSED_TIME);
+	/*
+	if ((time - timebase) % 1000 == 0) {
+		printf("FPS:%4.2f, Frame:%i\n",
+			frame*1000.0 / (time - timebase),
+			frame);
+		//timebase = time;
+		//frame = 0;
+	}*/
+
 	glClear(GL_COLOR_BUFFER_BIT
 		| GL_DEPTH_BUFFER_BIT);
 
 	glLoadIdentity();
 
-	glTranslatef(0.f, 0.f, -10.f);
-	glRotatef(angle, 0.f, 1.f, 0.f);
+	glTranslatef(0.f, 0.f, -20.f);
+	//glRotatef(angle, 0.f, 1.f, 0.f);
+	glRotatef(-10.f, 0.f, 1.f, 0.f);//-60
 
 	simulation.StepSim(.1f);
 	simulation.Draw();
@@ -55,10 +68,12 @@ void Render()
 
 	glFlush();
 	glutSwapBuffers();
-
-	//Sleep(100);
-
 	glutPostRedisplay();
+
+	if ((frame - 1) % 5 == 0) {
+		printf("Frame: %i\n", frame);
+		system("PAUSE");
+	}
 }
 
 void Keyboard(unsigned char key, int x, int y)
@@ -119,10 +134,36 @@ int main(int argc, char* argv[])
 				ilEnable(IL_ORIGIN_SET);
 				ilOriginFunc(IL_ORIGIN_LOWER_LEFT);
 				
-				// TMP
-				glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+				glEnable(GL_BLEND);
+				glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+				
+				glEnable(GL_CULL_FACE);
+
 				glEnable(GL_DEPTH_TEST);
 				glDepthFunc(GL_LESS);
+
+				glShadeModel(GL_SMOOTH);
+
+				{
+					GLfloat lSpecular[] = { 1.0, 1.0, 1.0, 1.0 };
+					GLfloat lShininess[] = { 50.0 };
+					GLfloat lPosition[] = { -1.0, 10.0, -1.0, 0.0 };
+					glMaterialfv(GL_FRONT, GL_SPECULAR, lSpecular);
+					glMaterialfv(GL_FRONT, GL_SHININESS, lShininess);
+					glLightfv(GL_LIGHT0, GL_POSITION, lPosition);
+
+					{
+						GLfloat lAmbient[] = {
+									1.0,
+									1.0,
+									1.0,
+									1.0 };
+						glMaterialfv(GL_FRONT, GL_AMBIENT, lAmbient);
+					}
+
+					glEnable(GL_LIGHTING);
+					glEnable(GL_LIGHT0);
+				}
 
 				glMatrixMode(GL_PROJECTION);
 				glLoadIdentity();
@@ -177,15 +218,72 @@ int main(int argc, char* argv[])
 		{
 			Obstacle* obstaclesCpu =
 				new Obstacle[NUM_OBSTACLES];
+
+			// Grid bounds.
+			uint boundNum = 0;
+			/*
 			{
-				obstaclesCpu[0].pos =
+				obstaclesCpu[boundNum].pos =
 					make_float3(0.f, -2.f, 0.f);
-				obstaclesCpu[0].vel =
+				obstaclesCpu[boundNum].vel =
 					make_float3(0.f, 0.f, 0.f);
-				obstaclesCpu[0].misc =
-					make_float3(0.f, 1.f, 0.f);
-				obstaclesCpu[0].friction = .01f;
-				obstaclesCpu[0].type = 0;
+				obstaclesCpu[boundNum].misc =
+					normalize(make_float3(0.f, 1.f, 0.1f));
+				obstaclesCpu[boundNum].friction = .1f;
+				obstaclesCpu[boundNum].type = 0;
+
+				boundNum++;
+			}*/
+			/*
+			{
+				obstaclesCpu[boundNum].pos =
+					make_float3(0.f, -2.f, 0.f);//-2.f, 3.f);
+				obstaclesCpu[boundNum].vel =
+					make_float3(0.f, 0.f, -1.f);
+				obstaclesCpu[boundNum].misc.x = 1.f;
+				obstaclesCpu[boundNum].friction = .1f;
+				obstaclesCpu[boundNum].type = 1;
+
+				boundNum++;
+			}*/
+
+			{
+				float3 bounds = make_float3(
+					grid.GetWidth() / 2.f,
+					grid.GetHeight() / 2.f,
+					grid.GetDepth() / 2.f);
+
+				float3 normal[] = {
+					make_float3(1, 0, 0),
+					make_float3(-1, 0, 0),
+					make_float3(0, 1, 0),
+					make_float3(0, -1, 0),
+					make_float3(0, 0, 1),
+					make_float3(0, 0, -1)
+				};
+
+				float3 center =
+					grid.GetPosition()
+					+ bounds * grid.GetScale();
+
+				for (uint i = 0; i < _countof(normal); i++)
+				{
+					{
+						obstaclesCpu[boundNum].pos =
+							center +
+							bounds *
+							grid.GetScale() *
+							-normal[i] * .9f;
+						obstaclesCpu[boundNum].vel =
+							make_float3(0.f, 0.f, 0.f);
+						obstaclesCpu[boundNum].misc =
+							-normal[i];
+						obstaclesCpu[boundNum].friction = 1.001f;
+						obstaclesCpu[boundNum].type = 2;
+					}
+
+					boundNum++;
+				}
 			}
 
 			{

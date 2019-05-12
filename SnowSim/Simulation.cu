@@ -3,19 +3,14 @@
 
 #include "Simulation.cuh"
 #include "Cube.h"
+#include "Sphere.h"
+#include "Plane.h"
 
 #define NUM_THREADS 128
 
 #define GRAVITY make_float3(0.f, -9.8f, 0.f)
 
 #define ALPHA .05f
-
-__device__
-float sign(float a)
-{
-	float val = a > 0;
-	return val - (a < 0);
-}
 
 __device__
 void atomicAdd(float3* address, float3 val)
@@ -303,7 +298,6 @@ void InitVolume(
 		particle.mass / particle.volume;
 }
 
-// FINISHED
 void Simulation::SetupSim(
 	Grid<GridCell>* grid,
 	SnowParticle* particleList,
@@ -748,8 +742,7 @@ float3x3 ComputeVelGrad(
 	}
 	
 	particle.velocity =
-		(1.f - ALPHA) * pic +
-		ALPHA * (particle.velocity + flip);
+		lerp(pic, particle.velocity + flip, ALPHA);
 }
 
 __device__
@@ -1073,6 +1066,7 @@ void Simulation::StepSim(
 
 void Simulation::Draw()
 {
+	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 	{
 		SnowParticle* particlesCPU =
 			new SnowParticle[numParticles];
@@ -1084,6 +1078,15 @@ void Simulation::Draw()
 			cudaMemcpyDeviceToHost));
 
 		glColor3f(0.f, 1.f, 0.f);
+
+		{
+			GLfloat lDiffuse[] =
+			{ 0.f, 0.f, 0.f, 1.f };
+			glMaterialfv(
+				GL_FRONT,
+				GL_DIFFUSE,
+				lDiffuse);
+		}
 
 		for (uint i = 0; i < numParticles; i++)
 		{
@@ -1100,5 +1103,136 @@ void Simulation::Draw()
 		}
 
 		glColor3f(1.f, 1.f, 1.f);
+
+		delete[] particlesCPU;
+	}
+
+	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+	{
+		Obstacle* obstaclesCPU =
+			new Obstacle[numParticles];
+
+		cudaError(cudaMemcpy(
+			obstaclesCPU,
+			obstacles,
+			numObstacles * sizeof(Obstacle),
+			cudaMemcpyDeviceToHost));
+
+		for (uint i = 0; i < numObstacles; i++)
+		{
+			switch (obstaclesCPU[i].type)
+			{
+			case 0:
+			{
+				glColor4f(
+					1,
+					0,
+					0,
+					1.0f);
+
+				{
+					GLfloat lDiffuse[] =
+					{	1,
+						0,
+						0,
+						.7f };
+					glMaterialfv(
+						GL_FRONT,
+						GL_DIFFUSE,
+						lDiffuse);
+				}
+
+				glPushMatrix();
+				{
+					Plane::Render(
+						obstaclesCPU[i].pos,
+						-obstaclesCPU[i].misc,
+						100.f);
+				}
+				glPopMatrix();
+
+				break;
+			}
+			case 1:
+			{
+				glColor4f(1.f, 0.f, 0.f, 1.f);
+
+				{
+					GLfloat lDiffuse[] =
+					{ 1.f, 0.f, 0.f, 1.f };
+					glMaterialfv(
+						GL_FRONT,
+						GL_DIFFUSE,
+						lDiffuse);
+				}
+
+				glPushMatrix();
+				{
+					glTranslatef(
+						obstaclesCPU[i].pos.x,
+						obstaclesCPU[i].pos.y,
+						obstaclesCPU[i].pos.z);
+
+					Sphere::Render(obstaclesCPU[i].misc.x);
+				}
+				glPopMatrix();
+
+				break;
+			}
+			case 2:
+			{
+				glColor4f(
+					fabs(obstaclesCPU[i].misc.x) * .5f + sign(obstaclesCPU[i].misc.x) * .5 + .2,
+					fabs(obstaclesCPU[i].misc.y) * .5f + sign(obstaclesCPU[i].misc.y) * .5 + .2,
+					fabs(obstaclesCPU[i].misc.z) * .5f + sign(obstaclesCPU[i].misc.z) * .5 + .2,
+					1.0f);
+
+				{
+					GLfloat lDiffuse[] = {
+						fabs(obstaclesCPU[i].misc.x) * .5f + sign(obstaclesCPU[i].misc.x) * .5 + .2,
+						fabs(obstaclesCPU[i].misc.y) * .5f + sign(obstaclesCPU[i].misc.y) * .5 + .2,
+						fabs(obstaclesCPU[i].misc.z) * .5f + sign(obstaclesCPU[i].misc.z) * .5 + .2,
+						1.0f };
+					glMaterialfv(
+						GL_FRONT,
+						GL_DIFFUSE,
+						lDiffuse);
+
+					GLfloat lAmbient[] = {
+						fabs(obstaclesCPU[i].misc.x) + sign(obstaclesCPU[i].misc.x) * .5 + .2,
+						fabs(obstaclesCPU[i].misc.y) + sign(obstaclesCPU[i].misc.y) * .5 + .2,
+						fabs(obstaclesCPU[i].misc.z) + sign(obstaclesCPU[i].misc.z) * .5 + .2,
+						1.0 };
+					glMaterialfv(GL_FRONT, GL_AMBIENT, lAmbient);
+				}
+
+				glPushMatrix();
+				{
+					Plane::Render(
+						obstaclesCPU[i].pos,
+						obstaclesCPU[i].misc,
+						10.f);
+				}
+				glPopMatrix();
+
+				{
+					GLfloat lAmbient[] = {
+									1.0,
+									1.0,
+									1.0,
+									1.0 };
+					glMaterialfv(GL_FRONT, GL_AMBIENT, lAmbient);
+				}
+
+				break;
+			}
+			}
+		}
+
+		{
+			glColor4f(1.f, 1.f, 1.f, 1.f);
+		}
+		
+		delete[] obstaclesCPU;
 	}
 }

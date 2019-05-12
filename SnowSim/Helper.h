@@ -69,3 +69,10 @@ struct Vec3Compare
 		return false;
 	}
 };
+
+__host__ __device__ __forceinline__
+float sign(float a)
+{
+	float val = a > 0;
+	return val - (a < 0);
+}

@@ -23,21 +23,49 @@ static bool planeHit(const Obstacle& obs, const float3& point)
 }
 
 __device__
+static bool planeHitFlip(const Obstacle& obs, const float3& point)
+{
+	return dot(point - obs.pos, -1.f * obs.misc) <= 0.f;
+}
+
+__device__
+static bool sphereHit(const Obstacle& obs, const float3& point)
+{
+	return length(point - obs.pos) <= obs.misc.x;
+}
+
+__device__
 static float3 planeNormal(const Obstacle& obs, const float3& point)
 {
 	return obs.misc;
 }
 
 __device__
-static hitF hitFunctions[1] =
+static float3 sphereNormal(const Obstacle& obs, const float3& point)
 {
-	planeHit
+	return normalize(point - obs.pos);
+}
+
+__device__
+static float3 planeNormalFlip(const Obstacle& obs, const float3& point)
+{
+	return -1.f * obs.misc;
+}
+
+__device__
+static hitF hitFunctions[] =
+{
+	planeHit,
+	sphereHit,
+	planeHitFlip,
 };
 
 __device__
-static normalF normalFunctions[1] =
+static normalF normalFunctions[] =
 {
-	planeNormal
+	planeNormal,
+	sphereNormal,
+	planeNormalFlip,
 };
 
 __device__
