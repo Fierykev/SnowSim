@@ -83,7 +83,7 @@ void Render()
 
 	if ((frame - 1) % 10 == 0) {
 		printf("Frame: %i\n", frame);
-		system("PAUSE");
+		//system("PAUSE");
 	}
 }
 
