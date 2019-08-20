@@ -244,10 +244,15 @@ void SnowSamples(
 			tmpParticle.velocity =
 				make_float3(0.f, -1.f, 0.f);
 		}
-		else
+		else if (SCENE == 1)
 		{
 			tmpParticle.velocity =
 				make_float3(10.f, 10.f, 10.f);
+		}
+		else
+		{
+			tmpParticle.velocity =
+				make_float3(0.f, -1.f, 0.f);
 		}
 	}
 

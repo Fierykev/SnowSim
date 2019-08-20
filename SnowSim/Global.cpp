@@ -1,6 +1,6 @@
 #include "Global.h"
 
-uint Global::NUM_PARTICLES = 10000;
+uint Global::NUM_PARTICLES = 100000;
 uint Global::SCENE = 0;
 float Global::TIME_STEP = .01f;
 float Global::TARGET_DENSITY = 20.f;

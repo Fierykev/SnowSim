@@ -1,6 +1,7 @@
 #include <cuda_runtime_api.h>
 #include <iostream>
 
+#include "Col.h"
 #include "Serializable.h"
 #include "Simulation.cuh"
 #include "Cube.h"
@@ -294,7 +295,9 @@ void Simulation::SetupSim(
 	SnowParticle* particleList,
 	uint numParticles,
 	Obstacle* obstacles,
-	uint numObstacles)
+	uint numObstacles,
+	TetGenObj** tetGen,
+	uint numCPUObstacles)
 {
 	{
 		this->grid = grid;
@@ -302,6 +305,9 @@ void Simulation::SetupSim(
 		this->numParticles = numParticles;
 		this->obstacles = obstacles;
 		this->numObstacles = numObstacles;
+		this->tetGen.assign(
+			tetGen,
+			tetGen + numCPUObstacles);
 	}
 
 	GridInfo gridInfo =
@@ -566,6 +572,73 @@ void ProcessObstacles(
 	}
 }
 
+__host__
+void ProcessObstaclesCPU(
+	std::vector<TetGenObj*>& tetGen,
+	const float3& pos,
+	float3& velocity)
+{
+	std::set<Collision> col;
+
+	col =
+		ComputeTetHit(
+			tetGen,
+			pos);
+
+	for (auto& c : col)
+	{
+		const TetGenObj& obstacle =
+			*tetGen[c.body1];
+		int tet = c.collidingTet;
+
+		if (tet != -1)
+		{
+			float3 vDelta =
+				velocity;// -obstacle.vel;
+
+			float3 normal =
+				obstacle.Ddistance(tet);
+
+			if (length(normal) < .001f)
+			{
+				normal = -vDelta;
+			}
+
+			normal = normalize(normal);
+
+			float angle =
+				dot(vDelta, normal);
+
+			// Objects moving into each other.
+			if (angle < 0.f)
+			{
+				float3 ref =
+					vDelta - normal * angle;
+				float magnitude =
+					length(ref);
+
+				if (magnitude <= -obstacle.friction * angle)
+				{
+					vDelta = make_float3(
+						0.f,
+						0.f,
+						0.f);
+				}
+				else
+				{
+					vDelta =
+						(1.f + obstacle.friction * angle / magnitude) *
+						ref;
+				}
+			}
+
+			velocity =
+				vDelta;// +
+				//obstacle.vel;
+		}
+	}
+}
+
 __global__
 void ComputeCellVel(
 	bool updateDeltaV,
@@ -791,6 +864,7 @@ void ComputeDeformGrad(
 
 __global__
 void UpdateParticles(
+	bool updatePos,
 	SnowParticle* particles,
 	SnowParticleExternalData* externalData,
 	GridCell* gridCell,
@@ -825,15 +899,18 @@ void UpdateParticles(
 		particle,
 		velGrad,
 		deltaT);
-	
+
 	ProcessObstacles(
 		obstacles,
 		numObstacles,
 		particle.position,
 		particle.velocity);
 
-	particle.position +=
-		deltaT * particle.velocity;
+	if (updatePos)
+	{
+		particle.position +=
+			deltaT * particle.velocity;
+	}
 }
 
 void Simulation::StepSim(
@@ -841,6 +918,8 @@ void Simulation::StepSim(
 	uint frame)
 {
 	//std::cout << "FRAME " << frame << std::endl;
+
+	bool cpuUpdate = tetGen.size() != 0;
 
 	// Clear data.
 	{
@@ -1076,7 +1155,7 @@ void Simulation::StepSim(
 			1);
 		
 		ComputeCellVel<<<blocks, threads>>>(
-			true,
+			!cpuUpdate,
 			particles,
 			externalData,
 			grid->Data(),
@@ -1133,6 +1212,73 @@ void Simulation::StepSim(
 #endif
 	}
 
+	// CPU side collisions.
+	if (cpuUpdate)
+	{
+		unsigned int size =
+			(grid->GetWidth() + 1) *
+			(grid->GetHeight() + 1) *
+			(grid->GetDepth() + 1);
+		GridCell* cellCPU;
+		{
+			cellCPU =
+				new GridCell[size];
+
+			cudaError(
+				cudaMemcpy(
+					cellCPU,
+					grid->Data(),
+					size * sizeof(GridCell),
+					cudaMemcpyDeviceToHost));
+		}
+
+		{
+#pragma omp parallel for
+			for (uint id = 0; id < size; id++)
+			{
+				if (0.f < cellCPU[id].mass)
+				{
+					continue;
+				}
+
+				uint3 relPos =
+					GridInfo::GetRelativePos(
+						id,
+						make_uint3(
+							grid->GetWidth() + 1,
+							grid->GetHeight() + 1,
+							grid->GetDepth() + 1));
+
+				float3 pos =
+					make_float3(
+						relPos.x,
+						relPos.y,
+						relPos.z) * grid->GetScale() +
+					grid->GetPosition();
+
+				ProcessObstaclesCPU(
+					tetGen,
+					pos,
+					cellCPU[id].velocity);
+
+				cellCPU[id].deltaV =
+					cellCPU[id].velocity - cellCPU[id].deltaV;
+			}
+		}
+
+		// Copy back.
+		{
+			cudaError(
+				cudaMemcpy(
+					grid->Data(),
+					cellCPU,
+					size * sizeof(GridCell),
+					cudaMemcpyHostToDevice));
+		}
+
+		delete[] cellCPU;
+	}
+
 	/*
 	std::cout << "4____________" << std::endl;
 	{
@@ -1185,6 +1331,7 @@ void Simulation::StepSim(
 			1);
 		
 		UpdateParticles<<<blocks, threads>>>(
+			!cpuUpdate,
 			particles,
 			externalData,
 			grid->Data(),
@@ -1261,6 +1408,55 @@ void Simulation::StepSim(
 				}
 #endif
 	}
+
+	{
+		cudaError(cudaDeviceSynchronize());
+		cudaError(cudaFree(externalData));
+	}
+
+	if (cpuUpdate)
+	{
+		SnowParticle* particlesCPU =
+			new SnowParticle[numParticles];
+		{
+			cudaError(cudaMemcpy(
+				particlesCPU,
+				particles,
+				numParticles * sizeof(SnowParticle),
+				cudaMemcpyDeviceToHost));
+		}
+
+		{
+#pragma omp parallel for
+			for (uint i = 0; i < numParticles; i++)
+			{
+				ProcessObstaclesCPU(
+					tetGen,
+					particlesCPU[i].position,
+					particlesCPU[i].velocity);
+
+				particlesCPU[i].position +=
+					particlesCPU[i].velocity *
+					deltaT;
+			}
+		}
+
+		// Copy back.
+		{
+			cudaError(cudaMemcpy(
+				particles,
+				particlesCPU,
+				numParticles * sizeof(SnowParticle),
+				cudaMemcpyHostToDevice));
+		}
+
+		delete[] particlesCPU;
+	}
+
+	{
+		
+	}
+
 	/*
 	std::cout << "5____________" << std::endl;
 	{
@@ -1456,4 +1652,170 @@ void Simulation::Draw()
 		
 		delete[] obstaclesCPU;
 	}
+}
+
+void WriteLittleE(
+	std::ofstream& file,
+	char* data)
+{
+	file.put(*data);
+}
+
+void Simulation::Export(
+	const char* name,
+	uint frame)
+{
+	std::string f = name;
+	f += "_";
+	f += std::to_string(frame);
+
+	{
+		std::ofstream file;
+		
+		//if (frame == 1)
+		file.open(f + ".d", ios::out | ios::binary);
+		//else
+			//file.open(f + ".d", ios::out | ios::binary | ios::app);
+
+		if (file.is_open())
+		{
+			float vol =
+				grid->GetScale() *
+				grid->GetScale() *
+				grid->GetScale();
+
+			// CPU side collisions.
+			GridCell* cellCPU;
+			{
+				unsigned int size =
+					(grid->GetWidth() + 1) *
+					(grid->GetHeight() + 1) *
+					(grid->GetDepth() + 1);
+				{
+					cellCPU =
+						new GridCell[size];
+
+					cudaError(
+						cudaMemcpy(
+							cellCPU,
+							grid->Data(),
+							size * sizeof(GridCell),
+							cudaMemcpyDeviceToHost));
+				}
+			}
+
+			uint w = grid->GetWidth() + 1;
+			uint h = grid->GetHeight() + 1;
+			uint d = grid->GetDepth() + 1;
+
+			//if (frame == 1)
+			{
+				file.write((char*)&w, sizeof(uint));
+				file.write((char*)&h, sizeof(uint));
+				file.write((char*)&d, sizeof(uint));
+
+				uint frames = 1;
+				file.write((char*)&frames, sizeof(uint));
+			}
+
+			for (uint z = 0; z < d; z++)
+			{
+				for (uint y = 0; y < h; y++)
+				{
+					for (uint x = 0; x < w; x++)
+					{
+						auto& cell =
+							cellCPU[x + y * w + z * w * h];
+						float density =
+							cell.mass / vol;
+						
+						//density = std::max(0.f, std::min(1.f, density));
+
+						file.write(
+							(char*)&density,
+							sizeof(float));
+					}
+				}
+			}
+
+			{
+				delete[] cellCPU;
+			}
+		}
+
+		file.close();
+	}
+	/*
+	{
+		std::ofstream file(f + ".v");
+
+		if (file.is_open())
+		{
+			float vol =
+				grid->GetScale() *
+				grid->GetScale() *
+				grid->GetScale();
+
+			// CPU side collisions.
+			GridCell* cellCPU;
+			{
+				unsigned int size =
+					(grid->GetWidth() + 1) *
+					(grid->GetHeight() + 1) *
+					(grid->GetDepth() + 1);
+				{
+					cellCPU =
+						new GridCell[size];
+
+					cudaError(
+						cudaMemcpy(
+							cellCPU,
+							grid->Data(),
+							size * sizeof(GridCell),
+							cudaMemcpyDeviceToHost));
+				}
+			}
+
+			uint w = grid->GetWidth() + 1;
+			uint h = grid->GetHeight() + 1;
+			uint d = grid->GetDepth() + 1;
+
+			{
+				file.write((char*)&w, sizeof(uint));
+				file.write((char*)&h, sizeof(uint));
+				file.write((char*)&d, sizeof(uint));
+
+				uint frames = 1;
+				file.write((char*)&frames, sizeof(uint));
+			}
+
+			for (uint x = 0; x < w; x++)
+			{
+				for (uint y = 0; y < h; y++)
+				{
+					for (uint z = 0; z < d; z++)
+					{
+						auto& cell =
+							cellCPU[x + y * w + z * w * d];
+						float3 vel =
+							cell.velocity;
+
+						vel.x = min(1.f, fabs(vel.x));
+						vel.y = min(1.f, fabs(vel.y));
+						vel.z = min(1.f, fabs(vel.z));
+
+						file.write((char*)&vel.x, sizeof(float));
+						file.write((char*)&vel.y, sizeof(float));
+						file.write((char*)&vel.z, sizeof(float));
+					}
+				}
+			}
+
+			{
+				delete[] cellCPU;
+			}
+		}
+
+		file.close();
+	}*/
 }

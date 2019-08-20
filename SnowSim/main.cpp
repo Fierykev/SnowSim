@@ -12,6 +12,7 @@
 // DevIL
 #include <IL/il.h>
 
+#include "TetGenObj.h"
 #include "Simulation.cuh"
 #include "SnowParticle.cuh"
 #include "SnowModel.cuh"
@@ -28,13 +29,14 @@
 int NUM_OBSTACLES = (6 + 1);
 
 int windowHandle = 0;
-int windowSizeX = 512, windowSizeY = 512;
+int windowSizeX = 1000, windowSizeY = 1000;
 
 SnowModel snowModel;
 Grid<GridCell> grid;
 SnowParticle* particles;
 Simulation simulation;
 Obstacle* obstacles;
+std::vector<TetGenObj*> tetGen;
 
 static float angle = 0.f;
 int frame = 0;// , time, timebase = 0;
@@ -65,6 +67,11 @@ void Render()
 	{
 		glRotatef(40.f, 0.f, 1.f, 0.f);//-60
 	}
+	if (Global::SCENE == 2)
+	{
+		glTranslatef(0.f, 1.f, 0.f);
+		glRotatef(-30.f, -5.f, 1.f, 0.f);
+	}
 	else
 	{
 		glRotatef(-60.f, 0.f, 1.f, 0.f);
@@ -73,7 +80,31 @@ void Render()
 	simulation.StepSim(
 		Global::TIME_STEP,
 		frame);
+
+	{
+		GLfloat lSpecular[] = { 1.0, 1.0, 1.0, 1.0 };
+		GLfloat lShininess[] = { 50.0 };
+		GLfloat lPosition[] = { -1.0, 10.0, -1.0, 0.0 };
+		glMaterialfv(GL_FRONT, GL_SPECULAR, lSpecular);
+		glMaterialfv(GL_FRONT, GL_SHININESS, lShininess);
+		glLightfv(GL_LIGHT0, GL_POSITION, lPosition);
+
+		{
+			GLfloat lAmbient[] = {
+						1.0,
+						1.0,
+						1.0,
+						1.0 };
+			glMaterialfv(GL_FRONT, GL_AMBIENT, lAmbient);
+		}
+	}
+
 	simulation.Draw();
+
+	for (uint i = 0; i < tetGen.size(); i++)
+	{
+		tetGen[i]->Render();
+	}
 
 	angle += 1.f;
 
@@ -84,6 +115,20 @@ void Render()
 	if ((frame - 1) % 10 == 0) {
 		printf("Frame: %i\n", frame);
 		//system("PAUSE");
+	}
+
+	// TEST
+	{
+		//simulation.Export("Export/Scene", frame);
+	}
+
+	if (frame == 60 && Global::SCENE == 2)
+	{
+		printf("-----------------------");
+		printf("Rigid Body Test Finished");
+		printf("-----------------------");
+		//system("PAUSE");
+		exit(0);
 	}
 }
 
@@ -222,7 +267,7 @@ int main(int argc, char* argv[])
 	}
 
 	{
-		if (1 < Global::SCENE)
+		if (2 < Global::SCENE)
 		{
 			Global::SCENE = 0;
 		}
@@ -334,9 +379,13 @@ int main(int argc, char* argv[])
 		{
 			snowModel.Load("Models/Monkey.obj");
 		}
-		else
+		else if (Global::SCENE == 1)
 		{
 			snowModel.Load("Models/Sphere.obj");
+		}
+		else
+		{
+			snowModel.Load("Models/Box.obj");
 		}
 
 		{
@@ -400,6 +449,10 @@ int main(int argc, char* argv[])
 			{
 				NUM_OBSTACLES++;
 			}
+			else if (Global::SCENE == 2)
+			{
+				NUM_OBSTACLES = 6;
+			}
 
 			Obstacle* obstaclesCpu =
 				new Obstacle[NUM_OBSTACLES];
@@ -430,7 +483,7 @@ int main(int argc, char* argv[])
 
 				boundNum++;
 			}
-			
+
 			if (Global::SCENE == 0)
 			{
 				obstaclesCpu[boundNum].pos =
@@ -499,18 +552,23 @@ int main(int argc, char* argv[])
 			delete[] obstaclesCpu;
 		}
 
+		// CPU Obstacles.
+		if (Global::SCENE == 2)
+		{
+			tetGen.push_back(
+				new TetGenObj(
+					"Models/Sans.obj"));
+		}
+
 		simulation.SetupSim(
 			&grid,
 			particles,
 			Global::NUM_PARTICLES,
 			obstacles,
-			NUM_OBSTACLES);
+			NUM_OBSTACLES,
+			tetGen.data(),
+			tetGen.size());
 	}
-	/*
-	simulation.StepSim(
-		.1f,
-		0);
-	exit(0);*/
 
 	// Run.
 	{

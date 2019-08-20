@@ -40,6 +40,7 @@ inline void cudaAssert(
 
 		if (abort)
 		{
+			system("PAUSE");
 			exit(code);
 		}
 	}

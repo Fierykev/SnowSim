@@ -8,7 +8,7 @@ struct GridInfo
 	unsigned int width, height, depth;
 	float scale;
 
-	__device__
+	__host__ __device__
 	static uint3 GetRelativePos(uint index, uint3 dim)
 	{
 		uint3 ret;
